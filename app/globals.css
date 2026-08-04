@@ -304,6 +304,9 @@ body.resizing-terminal, body.resizing-terminal * { cursor: ns-resize !important;
 .memory-turn-banner button:hover { color: #dddddd; border-color: #5a5a5a; }
 .memory-battle-layout { min-width: 0; min-height: 0; flex: 1 1 700px; display: flex; width: min(calc(100% - 32px), 1180px); max-height: 700px; align-self: center; margin: auto; overflow: hidden; border: 1px solid #2d2d2d; background: #1d1d1d; }
 .memory-battle-layout:not(.has-chat) { max-width: 980px; }
+/* The ranking column is extra furniture, so widen the shell by its own width
+   instead of taking the space out of the board. */
+.memory-battle-layout.has-ranking { width: min(calc(100% - 32px), 1396px); }
 .memory-board-area { position: relative; min-width: 0; min-height: 0; flex: 1; display: flex; }
 .memory-grid { min-height: 0; flex: 1; display: grid; gap: 10px; width: min(100%, 920px); margin: 0 auto; padding: 14px 18px; }
 .memory-grid.board-waiting .memory-card-back { background-color: #232323; }
@@ -528,34 +531,85 @@ body.resizing-terminal, body.resizing-terminal * { cursor: ns-resize !important;
 .lobby-account button { flex: none; height: 24px; padding: 0 9px; border: 1px solid #4b4b4b; border-radius: 2px; background: #2d2d30; color: #b0b0b0; cursor: pointer; font: 9px/1 var(--mono); }
 .lobby-account button:hover { border-color: #007acc; color: #ffffff; }
 
-.memory-ranking-panel { width: min(620px, 100%); }
-.ranking-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 14px 20px; scrollbar-width: thin; scrollbar-color: #4a4a4a transparent; }
-.ranking-body::-webkit-scrollbar { width: 10px; }
-.ranking-body::-webkit-scrollbar-thumb { border: 3px solid transparent; border-radius: 6px; background: #4a4a4a; background-clip: content-box; }
-.ranking-body section { margin-bottom: 18px; }
-.ranking-body section:last-child { margin-bottom: 0; }
-.ranking-body h4 { margin: 0 0 8px; color: #8e8e8e; font: 9px/1 var(--mono); letter-spacing: .8px; text-transform: uppercase; }
-.ranking-empty { margin: 0; padding: 12px; border: 1px dashed #3d3d3d; border-radius: 3px; color: #767676; font: 10px/16px var(--mono); text-align: center; }
-.ranking-me { padding: 12px 14px; border: 1px solid #3b4a3b; border-radius: 3px; background: #1f251f; }
-.ranking-me h4 { color: #b5cea8; }
-.ranking-me-figures { display: flex; gap: 20px; }
-.ranking-me-figures span { display: flex; align-items: baseline; gap: 4px; color: #cfcfcf; }
-.ranking-me-figures b { font-size: 20px; font-weight: 600; }
-.ranking-me-figures small { color: #8e8e8e; font-size: 9px; }
-.ranking-me-figures .win b { color: #7ec97e; }
-.ranking-me-figures .loss b { color: #e08c8c; }
+/* Ranking column, to the right of LIVE CHAT during a LAN battle. */
+.memory-ranking { width: 216px; flex: 0 0 216px; min-height: 0; display: flex; flex-direction: column; border-left: 1px solid #303030; background: #1b1b1b; }
+.memory-ranking > header { flex: 0 0 34px; display: flex; align-items: center; padding: 0 11px; border-bottom: 1px solid #303030; color: #8e8e8e; }
+.memory-ranking > header strong { font-size: 11px; letter-spacing: .7px; }
+.memory-ranking > header span { margin-left: auto; min-width: 19px; height: 19px; display: grid; place-items: center; border-radius: 10px; background: #2e2e2e; color: #888888; font-size: 10px; }
+.ranking-scroll { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 9px; scrollbar-width: thin; scrollbar-color: #414141 transparent; }
+.ranking-scroll::-webkit-scrollbar { width: 6px; }
+.ranking-scroll::-webkit-scrollbar-thumb { background: #414141; }
+.ranking-scroll h5 { margin: 14px 0 6px; color: #7c7c7c; font: 8px/1 var(--mono); letter-spacing: .8px; text-transform: uppercase; }
+.ranking-none { margin: 0; padding: 12px 8px; color: #6f6f6f; font: 9px/15px var(--mono); text-align: center; }
 
-.ranking-table { width: 100%; border-collapse: collapse; font: 10px/1 var(--mono); }
-.ranking-table th { padding: 6px 7px; border-bottom: 1px solid #3a3a3a; color: #7c7c7c; font-weight: 400; text-align: right; }
-.ranking-table th:nth-child(2), .ranking-table th:first-child { text-align: left; }
-.ranking-table td { padding: 7px; border-bottom: 1px solid #2c2c2c; color: #c3c3c3; text-align: right; }
-.ranking-table td:first-child { color: #8e8e8e; text-align: left; }
-.ranking-table td.nickname { max-width: 160px; overflow: hidden; color: #e0e0e0; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
-.ranking-table td.win { color: #7ec97e; }
-.ranking-table td.loss { color: #e08c8c; }
-.ranking-table tr.mine td { background: #22291f; }
-.ranking-table tbody tr:hover td { background: #262626; }
-.ranking-table tr.mine:hover td { background: #2a3226; }
+.ranking-self { margin-bottom: 10px; padding: 8px 9px; border: 1px solid #3b4a3b; border-radius: 3px; background: #1f251f; }
+.ranking-self b { display: block; overflow: hidden; color: #d6e8cd; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.ranking-self span { color: #8e8e8e; font: 9px/1.7 var(--mono); }
+
+.ranking-list { margin: 0; padding: 0; list-style: none; }
+.ranking-list li { display: flex; align-items: center; gap: 7px; padding: 6px 7px; border: 1px solid transparent; border-radius: 3px; font: 10px/1 var(--mono); }
+.ranking-list li + li { margin-top: 3px; }
+.ranking-list .rank { flex: none; width: 18px; color: #7c7c7c; text-align: center; }
+.ranking-list .who { flex: 1; min-width: 0; overflow: hidden; color: #cfcfcf; text-overflow: ellipsis; white-space: nowrap; }
+.ranking-list .wl { flex: none; color: #8e8e8e; font-size: 9px; }
+.ranking-list .wl b { color: #7ec97e; font-weight: 600; }
+.ranking-list li.mine { background: #22291f; }
+
+/* First place: gold plate, crown and a slow shimmer. */
+.ranking-list li.champion, .ranking-self.champion {
+  border-color: #d4a12a;
+  background: linear-gradient(100deg, #2e2616, #3b2f18 45%, #2e2616);
+  box-shadow: 0 0 0 1px #d4a12a33, 0 0 12px #d4a12a26;
+  animation: champion-glow 2.6s ease-in-out infinite;
+}
+.ranking-list li.champion .who, .ranking-self.champion b { color: #ffd970; font-weight: 600; text-shadow: 0 0 8px #d4a12a66; }
+.ranking-list li.champion .rank { font-size: 12px; }
+.ranking-list li.champion .wl { color: #c8ad72; }
+.ranking-list li.champion .wl b { color: #ffd970; }
+
+.ranking-opponents { margin: 0; padding: 0; list-style: none; }
+.ranking-opponents li { display: flex; align-items: center; gap: 7px; padding: 5px 7px; font: 10px/1 var(--mono); }
+.ranking-opponents li + li { border-top: 1px solid #272727; }
+.ranking-opponents .who { flex: 1; min-width: 0; overflow: hidden; color: #b6b6b6; text-overflow: ellipsis; white-space: nowrap; }
+.ranking-opponents .wl { flex: none; color: #8e8e8e; font-size: 9px; }
+.ranking-opponents .wl b { color: #7ec97e; font-weight: 600; }
+
+/* The scoreboard name of whoever currently tops the ranking. */
+.memory-scoreboard span.champion { border-radius: 4px; box-shadow: 0 0 0 1px #d4a12a, 0 0 12px #d4a12a40; animation: champion-glow 2.6s ease-in-out infinite; }
+.memory-scoreboard span.champion small { color: #ffd970; }
+.memory-scoreboard span.champion small::before { content: "👑 "; }
+.memory-scoreboard span.champion b { color: #ffe9a8; }
+
+@keyframes champion-glow {
+  0%, 100% { box-shadow: 0 0 0 1px #d4a12a55, 0 0 8px #d4a12a26; }
+  50% { box-shadow: 0 0 0 1px #f0c14b, 0 0 16px #d4a12a55; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ranking-list li.champion, .ranking-self.champion, .memory-scoreboard span.champion { animation: none; }
+}
+
+/* Esc keeps the game mounted so the LAN socket survives; it is only hidden. */
+.memory-game.is-hidden { display: none; }
+
+.memory-pause-overlay { position: absolute; inset: 0; z-index: 24; display: flex; align-items: center; justify-content: center; padding: 18px; background: #14141ae6; backdrop-filter: blur(3px); animation: overlay-in 160ms ease-out; }
+.memory-pause-overlay > div { width: min(340px, 100%); padding: 22px; border: 1px solid #5a5a5a; border-radius: 4px; background: #2b2b2c; box-shadow: 0 12px 30px #000b; text-align: center; }
+.memory-pause-overlay strong { display: block; color: #e8e8e8; font-size: 15px; }
+.memory-pause-overlay p { margin: 10px 0 0; color: #9a9a9a; font: 9px/16px var(--mono); }
+.pause-bars { display: flex; justify-content: center; gap: 6px; margin-bottom: 14px; }
+.pause-bars i { width: 8px; height: 26px; border-radius: 2px; background: #d7ba7d; animation: pause-pulse 1.4s ease-in-out infinite; }
+.pause-bars i:last-child { animation-delay: .2s; }
+.pause-actions { display: flex; justify-content: center; gap: 8px; margin-top: 17px; }
+.pause-actions button { min-width: 80px; height: 31px; border: 1px solid #4b4b4b; border-radius: 3px; background: #333335; color: #cccccc; cursor: pointer; font: 10px/1 var(--mono); }
+.pause-actions button:hover { border-color: #007acc; color: #ffffff; }
+.pause-actions button.primary { border-color: #2b6ea8; background: #234a68; color: #dbeaf5; }
+.pause-actions button.primary:hover { border-color: #007acc; background: #1f5a86; color: #ffffff; }
+
+@keyframes pause-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .pause-bars i { animation: none; }
+}
 
 .prompt-line { color: #eee; }
 .terminal-cursor { display: inline-block; width: 7px; height: 15px; background: #b9b9b9; vertical-align: -3px; animation: blink 1s step-end infinite; }
@@ -584,6 +638,18 @@ body.resizing-terminal, body.resizing-terminal * { cursor: ns-resize !important;
   .memory-battle-layout { width: calc(100% - 16px); }
   .memory-grid { gap: 7px; padding: 10px; }
   .memory-chat { width: 210px; flex-basis: 210px; }
+  /* Too narrow for three columns: the board keeps the space. */
+  .memory-ranking { display: none; }
+}
+
+/* Three full-width columns need roughly 1740px of window. Below that, stack the
+   ranking under the chat in the same column so the board keeps its width
+   instead of paying for the extra panel. */
+@media (max-width: 1740px) {
+  .memory-battle-layout.has-ranking { width: min(calc(100% - 32px), 1180px); display: grid; grid-template-columns: minmax(0, 1fr) 248px; grid-template-rows: minmax(0, 1fr) minmax(0, auto); }
+  .memory-battle-layout.has-ranking .memory-board-area { grid-column: 1; grid-row: 1 / span 2; }
+  .memory-battle-layout.has-ranking .memory-chat { grid-column: 2; grid-row: 1; width: auto; flex-basis: auto; }
+  .memory-battle-layout.has-ranking .memory-ranking { grid-column: 2; grid-row: 2; width: auto; flex-basis: auto; max-height: 210px; border-top: 1px solid #303030; }
 }
 
 @media (max-height: 650px) {
