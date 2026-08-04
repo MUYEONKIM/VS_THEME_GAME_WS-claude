@@ -38,6 +38,8 @@ type Room = {
   locked: boolean;
   resolveAt: number | null;
   completed: boolean;
+  // Seat that hit Esc to step away, or null while play is running.
+  pausedBy: 0 | 1 | null;
   // Set once the finished game has been written to the stats database.
   recorded: boolean;
   updatedAt: number;
@@ -114,6 +116,8 @@ function publicRoom(room: Room, playerId: string) {
     moves: room.moves,
     locked: room.locked,
     completed: room.completed,
+    pausedBy: room.pausedBy,
+    pausedByName: room.pausedBy === null ? "" : (room.players[room.pausedBy]?.name ?? ""),
     waiting: room.players.length < 2,
     isHost: playerIndex === 0,
   };
@@ -163,6 +167,7 @@ export class MemoryRoom extends DurableObject {
         locked: false,
         resolveAt: null,
         completed: false,
+        pausedBy: null,
         recorded: false,
         updatedAt: Date.now(),
       };
@@ -272,6 +277,19 @@ export class MemoryRoom extends DurableObject {
       return;
     }
 
+    // Esc pauses for both sides; only the player who stepped away resumes.
+    if (type === "pause") {
+      if (room.pausedBy === null) room.pausedBy = playerIndex as 0 | 1;
+      await this.commit(true);
+      return;
+    }
+
+    if (type === "resume") {
+      if (room.pausedBy === playerIndex) room.pausedBy = null;
+      await this.commit(true);
+      return;
+    }
+
     if (type === "restart") {
       if (playerIndex !== 0) {
         sendError(socket, "Only the host can restart the match.");
@@ -286,6 +304,10 @@ export class MemoryRoom extends DurableObject {
       const cardIndex = Number(payload.cardIndex);
       if (room.players.length < 2) {
         sendError(socket, "Waiting for an opponent.");
+        return;
+      }
+      if (room.pausedBy !== null) {
+        sendError(socket, "일시중지 중입니다.");
         return;
       }
       if (room.completed || room.locked || room.currentTurn !== playerIndex) {
@@ -379,6 +401,7 @@ export class MemoryRoom extends DurableObject {
     room.locked = false;
     room.resolveAt = null;
     room.completed = false;
+    room.pausedBy = null;
     room.recorded = false;
   }
 
@@ -395,7 +418,9 @@ export class MemoryRoom extends DurableObject {
     await this.persist();
 
     const [first, second] = room.players;
+    // A tie has no winner, and records hold no draws, so nothing is written.
     const winnerIndex = room.scores[0] === room.scores[1] ? null : (room.scores[0] > room.scores[1] ? 0 : 1);
+    if (winnerIndex === null) return;
     await recordMatch({
       roomCode: room.code,
       playerA: first.accountId ?? GUEST_ID,
