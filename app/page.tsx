@@ -201,6 +201,7 @@ export default function Home() {
   const [terminalOpen, setTerminalOpen] = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [memoryOpen, setMemoryOpen] = useState(false);
+  const [memoryHidden, setMemoryHidden] = useState(false);
   const { activeGame, gameView, launchGame: startGame, closeGame, restartGame, handleGameKey, handleGameKeyUp } = useTerminalGames();
   const [terminalHistory, setTerminalHistory] = useState<string[]>([
     "PS C:\\Users\\dev\\atlas-api> npm run dev",
@@ -297,7 +298,15 @@ export default function Home() {
 
   const closeMemoryGame = () => {
     setMemoryOpen(false);
+    setMemoryHidden(false);
     setTerminalOpen(terminalWasOpenRef.current);
+  };
+
+  // Esc hides the game behind the editor without unmounting it, so the LAN
+  // socket stays open and the opponent sees a pause rather than a dropout.
+  const hideMemoryGame = (hidden: boolean) => {
+    setMemoryHidden(hidden);
+    setTerminalOpen(hidden ? terminalWasOpenRef.current : false);
   };
 
   const beginTerminalResize = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
@@ -396,16 +405,17 @@ export default function Home() {
 
         <section className="main-pane">
           <div className="editor-tabs">
-            <button className="tab active"><FileIcon kind="ts" /><span>{memoryOpen ? editorGame.name : activeFile}</span><span className="tab-dot">●</span></button>
+            <button className="tab active"><FileIcon kind="ts" /><span>{memoryOpen && !memoryHidden ? editorGame.name : activeFile}</span><span className="tab-dot">●</span></button>
             <div className="editor-actions"><button title="Split Editor">▯</button><button title="More Actions">•••</button></div>
           </div>
           <div className="breadcrumbs">
             <span>atlas-api</span><b>›</b>
-            {memoryOpen ? <><span>games</span><b>›</b><FileIcon kind="ts" /><span>{editorGame.name}</span><b>›</b><span className="crumb-symbol">◇</span><span>runReferenceSuite</span></> : <><span>src</span><b>›</b><span>middleware</span><b>›</b><FileIcon kind="ts" /><span>{activeFile}</span><b>›</b><span className="crumb-symbol">◇</span><span>createServer</span></>}
+            {memoryOpen && !memoryHidden ? <><span>games</span><b>›</b><FileIcon kind="ts" /><span>{editorGame.name}</span><b>›</b><span className="crumb-symbol">◇</span><span>runReferenceSuite</span></> : <><span>src</span><b>›</b><span>middleware</span><b>›</b><FileIcon kind="ts" /><span>{activeFile}</span><b>›</b><span className="crumb-symbol">◇</span><span>createServer</span></>}
           </div>
 
           <div className="editor-and-terminal" ref={editorTerminalRef}>
-            {memoryOpen ? <MemoryGame onExit={closeMemoryGame} /> : <div className="editor-wrap" aria-label={`${activeFile} code editor`}>
+            {memoryOpen && <MemoryGame onExit={closeMemoryGame} hidden={memoryHidden} onHiddenChange={hideMemoryGame} />}
+            {(!memoryOpen || memoryHidden) && <div className="editor-wrap" aria-label={`${activeFile} code editor`}>
               <div className="code-lines">
                 {lines.map((line, index) => (
                   <div className="code-line" key={index}>
