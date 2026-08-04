@@ -32,7 +32,7 @@ type LocalGame = {
 
 type Account = { id: string; nickname: string };
 
-type PlayerRecord = { games: number; wins: number; losses: number; draws: number };
+type PlayerRecord = { games: number; wins: number; losses: number };
 
 type RankingRow = PlayerRecord & { id: string; nickname: string; rank: number };
 
@@ -63,6 +63,8 @@ type LanRoom = {
   moves: number;
   locked: boolean;
   completed: boolean;
+  pausedBy: 0 | 1 | null;
+  pausedByName: string;
   waiting: boolean;
   isHost: boolean;
 };
@@ -137,7 +139,15 @@ async function copyText(value: string) {
   field.remove();
 }
 
-export function MemoryGame({ onExit }: { onExit: () => void }) {
+export function MemoryGame({
+  onExit,
+  hidden = false,
+  onHiddenChange,
+}: {
+  onExit: () => void;
+  hidden?: boolean;
+  onHiddenChange?: (hidden: boolean) => void;
+}) {
   const [mode, setMode] = useState<GameMode>("computer");
   const [difficulty, setDifficulty] = useState<Difficulty>("normal");
   const [rematchDifficulty, setRematchDifficulty] = useState<Difficulty>("normal");
@@ -163,15 +173,14 @@ export function MemoryGame({ onExit }: { onExit: () => void }) {
   const [authBusy, setAuthBusy] = useState(false);
   const [authMessage, setAuthMessage] = useState("");
   const [myRecord, setMyRecord] = useState<PlayerRecord | null>(null);
-  const [rankingOpen, setRankingOpen] = useState(false);
   const [stats, setStats] = useState<StatsPayload | null>(null);
-  const [statsBusy, setStatsBusy] = useState(false);
   const [libraryOpen, setLibraryOpen] = useState(false);
   const [libraryPassword, setLibraryPassword] = useState("");
   const [libraryMessage, setLibraryMessage] = useState("");
   const [libraryBusy, setLibraryBusy] = useState(false);
   const [selectedImages, setSelectedImages] = useState<string[]>([]);
   const [deleteStage, setDeleteStage] = useState<"" | "confirm" | "password">("");
+  const [resumeAsking, setResumeAsking] = useState(false);
   const [matchEffect, setMatchEffect] = useState<{ cardIndexes: number[] } | null>(null);
   const [comboEffect, setComboEffect] = useState<number | null>(null);
   const [scorePulse, setScorePulse] = useState<number | null>(null);
@@ -475,6 +484,7 @@ export function MemoryGame({ onExit }: { onExit: () => void }) {
 
   const flipLanCard = (cardIndex: number) => {
     if (!lanRoom || lanRoom.waiting || lanRoom.locked || lanRoom.completed || lanRoom.currentTurn !== lanRoom.playerIndex) return;
+    if (lanRoom.pausedBy !== null) return;
     sendLan({ type: "flip", cardIndex });
   };
 
@@ -623,25 +633,29 @@ export function MemoryGame({ onExit }: { onExit: () => void }) {
     }
   };
 
-  const openRanking = async () => {
-    setRankingOpen(true);
-    setStatsBusy(true);
+  const refreshStats = useCallback(async () => {
     try {
       const response = await fetch("/api/stats", {
         headers: sessionToken ? { "x-session-token": sessionToken } : undefined,
         cache: "no-store",
       });
       const data = await response.json();
-      if (response.ok) {
-        setStats(data);
-        if (data.record) setMyRecord(data.record);
-      }
+      if (!response.ok) return;
+      setStats(data);
+      if (data.record) setMyRecord(data.record);
     } catch {
       // The previously loaded board stays on screen.
-    } finally {
-      setStatsBusy(false);
     }
-  };
+  }, [sessionToken]);
+
+  // Load the board when a LAN room opens, and again once a game finishes so
+  // the crown moves as soon as the standings change.
+  useEffect(() => {
+    if (mode !== "lan" || !lanRoom) return;
+    // refreshStats only touches state after its fetch resolves, never in this tick.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    refreshStats();
+  }, [mode, lanRoom?.code, lanRoom?.completed, refreshStats]);
 
   const openLibrary = async () => {
     setLibraryOpen(true);
@@ -715,7 +729,43 @@ export function MemoryGame({ onExit }: { onExit: () => void }) {
     setLibraryMessage(`${deleted}장을 삭제했습니다. 다음 게임부터 반영됩니다.`);
   };
 
+  // Esc is the panic button: it drops back to the editor without tearing the
+  // room down, and pressing it again asks whether to carry on.
+  const escapeGame = useCallback(() => {
+    if (hidden) {
+      onHiddenChange?.(false);
+      setResumeAsking(true);
+      return;
+    }
+    if (lanSocket.current?.readyState === WebSocket.OPEN) sendLan({ type: "pause" });
+    setChatPickerOpen(false);
+    setChatImagePending("");
+    setResumeAsking(false);
+    onHiddenChange?.(true);
+  }, [hidden, onHiddenChange, sendLan]);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      const target = event.target as HTMLElement | null;
+      // Let Esc clear a field the player is typing in first.
+      if (target && /^(INPUT|TEXTAREA)$/.test(target.tagName)) return;
+      event.preventDefault();
+      escapeGame();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [escapeGame]);
+
+  const resumeGame = () => {
+    if (lanSocket.current?.readyState === WebSocket.OPEN) sendLan({ type: "resume" });
+    setResumeAsking(false);
+  };
+
   const uploadedImages = useMemo(() => imagePool.filter(isUploadedImage), [imagePool]);
+
+  // Whoever sits at rank 1 wears the crown, in the board and in the list.
+  const championNickname = stats?.ranking.find((row) => row.rank === 1)?.nickname ?? "";
 
   const view = useMemo(() => {
     if (mode === "lan" && lanRoom) {
@@ -809,7 +859,7 @@ export function MemoryGame({ onExit }: { onExit: () => void }) {
   const resultText = winner < 0 ? "DRAW" : (winner === view.playerIndex ? "YOU WIN" : `${view.names[winner]} WINS`);
 
   return (
-    <section className="memory-game" aria-label="Picture matching battle">
+    <section className={`memory-game ${hidden ? "is-hidden" : ""}`} aria-label="Picture matching battle" aria-hidden={hidden}>
       <header className="memory-toolbar">
         <div className="memory-heading">
           <strong>asset-cache.test.ts</strong>
@@ -819,9 +869,20 @@ export function MemoryGame({ onExit }: { onExit: () => void }) {
           </div>
         </div>
         <div className="memory-scoreboard" aria-live="polite">
-          <span className={`${view.currentTurn === 0 ? "turn-active" : ""} ${scorePulse === 0 ? "score-pulse" : ""}`}><small>{view.names[0]}</small><b>{view.scores[0]}</b></span>
-          <i>:</i>
-          <span className={`${view.currentTurn === 1 ? "turn-active" : ""} ${scorePulse === 1 ? "score-pulse" : ""}`}><small>{view.names[1]}</small><b>{view.scores[1]}</b></span>
+          {([0, 1] as const).map((seat) => (
+            <span
+              key={seat}
+              className={[
+                view.currentTurn === seat ? "turn-active" : "",
+                scorePulse === seat ? "score-pulse" : "",
+                // The reigning number one is marked wherever their name shows.
+                championNickname && view.names[seat] === championNickname ? "champion" : "",
+              ].filter(Boolean).join(" ")}
+            >
+              <small>{view.names[seat]}</small>
+              <b>{view.scores[seat]}</b>
+            </span>
+          )).flatMap((node, index) => (index === 0 ? [node] : [<i key="sep">:</i>, node]))}
         </div>
         <div className="memory-stats">
           <span>TURN <b>{waiting ? "WAIT" : (yourTurn ? "YOU" : view.names[view.currentTurn])}</b></span>
@@ -845,7 +906,6 @@ export function MemoryGame({ onExit }: { onExit: () => void }) {
           </div>
           <button className="memory-plain-button" onClick={() => { setUploadOpen(true); setUploadMessage(""); }} title={`${imagePool.length} photos available`}>Add photos</button>
           <button className="memory-plain-button" onClick={openLibrary} title={`${imagePool.length} photos · ${uploadedImages.length} uploaded`}>Photo list</button>
-          <button className="memory-plain-button" onClick={openRanking} title="전적과 랭킹">Ranking</button>
           <button className="memory-plain-button" onClick={() => mode === "computer" ? startComputerGame(difficulty) : restartLan(difficulty)} disabled={mode === "lan" && !lanRoom?.isHost}>Restart</button>
           <button className="memory-plain-button" onClick={onExit}>Close</button>
         </div>
@@ -880,7 +940,7 @@ export function MemoryGame({ onExit }: { onExit: () => void }) {
                   onChange={(event) => { setLoginCode(event.target.value.replace(/\D/g, "").slice(0, 4)); setAuthMessage(""); }}
                 />
               </label>
-              <button type="submit" className="lobby-create" disabled={authBusy || !nickname.trim() || loginCode.length !== 4}>
+              <button type="submit" className="lobby-create lobby-signin-submit" disabled={authBusy || !nickname.trim() || loginCode.length !== 4}>
                 {authBusy ? "확인 중…" : "로그인 / 가입"}
               </button>
             </form>
@@ -899,7 +959,7 @@ export function MemoryGame({ onExit }: { onExit: () => void }) {
             {account ? (
               <div className="lobby-account">
                 <span><b>{account.nickname}</b>로 로그인됨</span>
-                {myRecord && <small>{myRecord.games}전 {myRecord.wins}승 {myRecord.losses}패 {myRecord.draws}무</small>}
+                {myRecord && <small>{myRecord.games}전 {myRecord.wins}승 {myRecord.losses}패</small>}
                 <button type="button" onClick={signOut}>로그아웃</button>
               </div>
             ) : (
@@ -969,7 +1029,7 @@ export function MemoryGame({ onExit }: { onExit: () => void }) {
             {waiting ? `ROOM ${lanRoom?.code} · WAITING FOR OPPONENT` : (yourTurn ? "YOUR TURN" : `${view.names[view.currentTurn]}'S TURN`)}
             {mode === "lan" && lanRoom && <button onClick={() => copyText(lanRoom.code)} title="Copy room code">ROOM {lanRoom.code}</button>}
           </div>
-          <div className={`memory-battle-layout ${mode === "lan" ? "has-chat" : ""}`}>
+          <div className={`memory-battle-layout ${mode === "lan" ? "has-chat" : ""} ${mode === "lan" && lanRoom ? "has-ranking" : ""}`}>
             <div className="memory-board-area">
               <div className={`memory-grid difficulty-${difficulty} ${!yourTurn || waiting ? "board-waiting" : ""}`} style={gridStyle}>
                 {view.pairIds.map((pairId, index) => {
@@ -1104,6 +1164,55 @@ export function MemoryGame({ onExit }: { onExit: () => void }) {
                 </form>
               </aside>
             )}
+            {mode === "lan" && lanRoom && (
+              <aside className="memory-ranking" aria-label="랭킹">
+                <header>
+                  <strong>RANKING</strong>
+                  <span>{stats ? stats.ranking.length : "…"}</span>
+                </header>
+                <div className="ranking-scroll">
+                  {account && myRecord && (
+                    <div className={`ranking-self ${account.nickname === championNickname ? "champion" : ""}`}>
+                      <b>{account.nickname}</b>
+                      <span>{myRecord.games}전 {myRecord.wins}승 {myRecord.losses}패</span>
+                    </div>
+                  )}
+
+                  {stats && stats.ranking.length > 0 ? (
+                    <ol className="ranking-list">
+                      {stats.ranking.map((row) => (
+                        <li
+                          key={row.id}
+                          className={`${row.rank === 1 ? "champion" : ""} ${row.id === account?.id ? "mine" : ""}`}
+                        >
+                          <span className="rank">{row.rank === 1 ? "👑" : row.rank}</span>
+                          <span className="who">{row.nickname}</span>
+                          <span className="wl"><b>{row.wins}</b>승 {row.losses}패</span>
+                        </li>
+                      ))}
+                    </ol>
+                  ) : (
+                    <p className="ranking-none">{stats ? "아직 끝난 대전이 없습니다." : "불러오는 중…"}</p>
+                  )}
+
+                  {account && stats && stats.opponents.length > 0 && (
+                    <>
+                      <h5>상대별 전적</h5>
+                      <ul className="ranking-opponents">
+                        {stats.opponents.map((row) => (
+                          <li key={row.id}>
+                            <span className="who">{row.nickname}</span>
+                            <span className="wl"><b>{row.wins}</b>승 {row.losses}패</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </>
+                  )}
+
+                  {!account && <p className="ranking-none">로그인하면 내 전적도 함께 표시됩니다.</p>}
+                </div>
+              </aside>
+            )}
           </div>
         </>
       )}
@@ -1113,89 +1222,25 @@ export function MemoryGame({ onExit }: { onExit: () => void }) {
         <span>{networkError || photoNotice || `${config.columns} columns × ${config.rows} rows · ${config.pairs} image pairs · ${imagePool.length} photos`}</span>
       </footer>
 
-      {rankingOpen && (
-        <div className="memory-library-overlay" role="dialog" aria-modal="true" aria-label="전적과 랭킹">
-          <div className="memory-library-panel memory-ranking-panel">
-            <header>
-              <div>
-                <small>LAN BATTLE RECORDS</small>
-                <strong>전적 · 랭킹</strong>
-              </div>
-              <span className="library-count">{statsBusy ? "불러오는 중…" : `${stats?.ranking.length ?? 0}명 등록`}</span>
-              <button type="button" className="library-close" onClick={() => setRankingOpen(false)} aria-label="닫기">×</button>
-            </header>
+      {lanRoom && lanRoom.pausedBy !== null && lanRoom.pausedBy !== lanRoom.playerIndex && (
+        <div className="memory-pause-overlay" role="dialog" aria-modal="true" aria-label="일시중지">
+          <div>
+            <span className="pause-bars" aria-hidden="true"><i /><i /></span>
+            <strong>일시중지중입니다</strong>
+            <p>{lanRoom.pausedByName || "상대방"}님이 잠시 자리를 비웠습니다. 돌아오면 자동으로 재개됩니다.</p>
+          </div>
+        </div>
+      )}
 
-            <div className="ranking-body">
-              {stats?.player && stats.record ? (
-                <section className="ranking-me">
-                  <h4>내 전적 · {stats.player.nickname}</h4>
-                  <div className="ranking-me-figures">
-                    <span><b>{stats.record.games}</b><small>전</small></span>
-                    <span className="win"><b>{stats.record.wins}</b><small>승</small></span>
-                    <span className="loss"><b>{stats.record.losses}</b><small>패</small></span>
-                    <span><b>{stats.record.draws}</b><small>무</small></span>
-                  </div>
-                </section>
-              ) : (
-                <p className="ranking-empty">로그인하면 내 전적과 상대별 기록이 여기에 표시됩니다. 랭킹은 로그인 없이도 볼 수 있습니다.</p>
-              )}
-
-              <section>
-                <h4>랭킹 · 승수순</h4>
-                {stats && stats.ranking.length > 0 ? (
-                  <table className="ranking-table">
-                    <thead>
-                      <tr><th>#</th><th>닉네임</th><th>전</th><th>승</th><th>패</th><th>무</th></tr>
-                    </thead>
-                    <tbody>
-                      {stats.ranking.map((row) => (
-                        <tr key={row.id} className={row.id === stats.player?.id ? "mine" : ""}>
-                          <td>{row.rank}</td>
-                          <td className="nickname">{row.nickname}</td>
-                          <td>{row.games}</td>
-                          <td className="win">{row.wins}</td>
-                          <td className="loss">{row.losses}</td>
-                          <td>{row.draws}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                ) : (
-                  <p className="ranking-empty">{statsBusy ? "불러오는 중…" : "아직 끝난 대전이 없습니다."}</p>
-                )}
-              </section>
-
-              {stats?.player && (
-                <section>
-                  <h4>상대별 전적</h4>
-                  {stats.opponents.length > 0 ? (
-                    <table className="ranking-table">
-                      <thead>
-                        <tr><th>상대</th><th>전</th><th>승</th><th>패</th><th>무</th><th>최근</th></tr>
-                      </thead>
-                      <tbody>
-                        {stats.opponents.map((row) => (
-                          <tr key={row.id}>
-                            <td className="nickname">{row.nickname}</td>
-                            <td>{row.games}</td>
-                            <td className="win">{row.wins}</td>
-                            <td className="loss">{row.losses}</td>
-                            <td>{row.draws}</td>
-                            <td>{new Date(row.lastPlayedAt).toLocaleDateString()}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  ) : (
-                    <p className="ranking-empty">아직 대전한 상대가 없습니다.</p>
-                  )}
-                </section>
-              )}
+      {resumeAsking && (
+        <div className="memory-pause-overlay" role="dialog" aria-modal="true" aria-label="게임 재개 확인">
+          <div>
+            <strong>게임을 다시 재개하시겠습니까?</strong>
+            <p>Esc를 누르면 언제든 다시 편집기 화면으로 빠져나갈 수 있습니다.</p>
+            <div className="pause-actions">
+              <button type="button" onClick={() => { setResumeAsking(false); onHiddenChange?.(true); }}>No</button>
+              <button type="button" className="primary" onClick={resumeGame}>Yes</button>
             </div>
-
-            <footer>
-              <p>LAN 대전이 끝까지 진행된 판만 기록됩니다 · 중간에 나간 판과 CPU 대전은 집계되지 않습니다</p>
-            </footer>
           </div>
         </div>
       )}
