@@ -4,7 +4,6 @@ export type PlayerRecord = {
   games: number;
   wins: number;
   losses: number;
-  draws: number;
 };
 
 export type RankingRow = PlayerRecord & {
@@ -39,13 +38,12 @@ export type FinishedMatch = {
 export const GUEST_ID = "guest";
 export const GUEST_NICKNAME = "Guest";
 
-// Counted from the players' perspective: a row in `matches` is a win for
-// whoever `winner` points at, a draw when it is NULL.
+// Counted from the players' perspective: every recorded row has a winner, so a
+// game is either a win or a loss.
 const RECORD_COLUMNS = `
   COUNT(matches.id) AS games,
   SUM(CASE WHEN matches.winner = players.id THEN 1 ELSE 0 END) AS wins,
-  SUM(CASE WHEN matches.winner IS NOT NULL AND matches.winner <> players.id THEN 1 ELSE 0 END) AS losses,
-  SUM(CASE WHEN matches.winner IS NULL THEN 1 ELSE 0 END) AS draws
+  SUM(CASE WHEN matches.winner <> players.id THEN 1 ELSE 0 END) AS losses
 `;
 
 async function database() {
@@ -53,13 +51,15 @@ async function database() {
   return STATS ?? null;
 }
 
-const emptyRecord: PlayerRecord = { games: 0, wins: 0, losses: 0, draws: 0 };
+const emptyRecord: PlayerRecord = { games: 0, wins: 0, losses: 0 };
 
 export async function recordMatch(match: FinishedMatch) {
   const db = await database();
   if (!db) return;
   // Nobody to credit when neither seat is signed in.
   if (match.playerA === GUEST_ID && match.playerB === GUEST_ID) return;
+  // There are no draws in the records: a tied game simply is not written.
+  if (!match.winner) return;
   await db
     .prepare(`
       INSERT INTO matches (id, room_code, player_a, player_b, score_a, score_b, winner, difficulty, moves, finished_at)
@@ -123,8 +123,7 @@ export async function opponentsFor(playerId: string): Promise<OpponentRow[]> {
           CASE WHEN matches.player_a = ?1 THEN matches.player_b ELSE matches.player_a END AS opponent_id,
           COUNT(*) AS games,
           SUM(CASE WHEN matches.winner = ?1 THEN 1 ELSE 0 END) AS wins,
-          SUM(CASE WHEN matches.winner IS NOT NULL AND matches.winner <> ?1 THEN 1 ELSE 0 END) AS losses,
-          SUM(CASE WHEN matches.winner IS NULL THEN 1 ELSE 0 END) AS draws,
+          SUM(CASE WHEN matches.winner <> ?1 THEN 1 ELSE 0 END) AS losses,
           MAX(matches.finished_at) AS last_played_at
         FROM matches
         WHERE matches.player_a = ?1 OR matches.player_b = ?1
@@ -133,7 +132,7 @@ export async function opponentsFor(playerId: string): Promise<OpponentRow[]> {
       SELECT head_to_head.opponent_id AS id,
              COALESCE(players.nickname, ?2) AS nickname,
              head_to_head.games AS games, head_to_head.wins AS wins,
-             head_to_head.losses AS losses, head_to_head.draws AS draws,
+             head_to_head.losses AS losses,
              head_to_head.last_played_at AS lastPlayedAt
       FROM head_to_head
       LEFT JOIN players ON players.id = head_to_head.opponent_id
