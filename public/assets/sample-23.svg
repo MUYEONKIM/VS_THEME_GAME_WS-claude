@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200" role="img" aria-label="Sample card 23">
+  <rect width="200" height="200" fill="#f7dfee"/>
+  <path d="M100 46l54 54-26 0 0 54-56 0 0-54-26 0z" fill="#c4499a"/>
+  <text x="100" y="186" fill="#c4499a" font-family="monospace" font-size="13" text-anchor="middle" opacity="0.75">sample 23</text>
+</svg>

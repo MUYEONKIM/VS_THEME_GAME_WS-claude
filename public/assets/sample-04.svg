@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200" role="img" aria-label="Sample card 04">
+  <rect width="200" height="200" fill="#eef5dd"/>
+  <polygon points="100,48 152,100 100,152 48,100" fill="#8fb43c"/>
+  <text x="100" y="186" fill="#8fb43c" font-family="monospace" font-size="13" text-anchor="middle" opacity="0.75">sample 04</text>
+</svg>

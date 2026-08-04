@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200" role="img" aria-label="Sample card 02">
+  <rect width="200" height="200" fill="#fbeedd"/>
+  <rect x="56" y="56" width="88" height="88" rx="10" fill="#e08a3c"/>
+  <text x="100" y="186" fill="#e08a3c" font-family="monospace" font-size="13" text-anchor="middle" opacity="0.75">sample 02</text>
+</svg>

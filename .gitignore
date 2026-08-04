@@ -1,0 +1,57 @@
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+# dependencies
+/node_modules
+/.pnpm-store/
+/.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
+# testing
+/coverage
+
+# next.js
+/.next/
+/.vinext/
+/out/
+
+# misc
+.DS_Store
+*.pem
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# env files (can opt-in for committing if needed)
+.env*
+!.env.example
+
+# vercel
+.vercel
+
+# typescript
+next-env.d.ts
+*.tsbuildinfo
+/dist/
+/.wrangler/
+/.data/
+/outputs/
+/work/
+
+# Private card photos. Everything dropped into public/assets stays local except
+# the bundled sample cards, so personal pictures are deployed but never
+# committed. The matching path list lives in app/photos.local.json.
+/public/assets/*
+!/public/assets/sample-*.svg
+/app/photos.local.json
+
+# Internal notes and hosting metadata that name this deployment's resources.
+/CLAUDE_HANDOFF.md
+/.openai/
