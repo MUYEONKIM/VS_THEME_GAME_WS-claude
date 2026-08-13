@@ -53,10 +53,10 @@ const MAX_MESSAGES = 80;
 
 // WebSocket close codes above 4000 are application defined.
 export const CLOSE_BAD_REQUEST = 4400;
-const CLOSE_NOT_A_PLAYER = 4403;
-const CLOSE_ROOM_MISSING = 4404;
-const CLOSE_ROOM_EXPIRED = 4408;
-const CLOSE_ROOM_FULL = 4409;
+export const CLOSE_NOT_A_PLAYER = 4403;
+export const CLOSE_ROOM_MISSING = 4404;
+export const CLOSE_ROOM_EXPIRED = 4408;
+export const CLOSE_ROOM_FULL = 4409;
 export const CLOSE_NO_CAPACITY = 4503;
 
 /**
