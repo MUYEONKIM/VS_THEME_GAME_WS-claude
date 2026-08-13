@@ -2,11 +2,13 @@
 import { handleImageOptimization, DEFAULT_DEVICE_SIZES, DEFAULT_IMAGE_SIZES } from "vinext/server/image-optimization";
 import handler from "vinext/server/app-router-entry";
 import { CLOSE_BAD_REQUEST, CLOSE_NO_CAPACITY, MemoryRoom, rejectSocket } from "./memory-room";
+import { ReactionRoom } from "./reaction-room";
 
 interface Env {
   ASSETS: Fetcher;
   MEMORY_IMAGES: KVNamespace;
   MEMORY_ROOM: DurableObjectNamespace;
+  REACTION_ROOM: DurableObjectNamespace;
   IMAGES: {
     input(stream: ReadableStream): {
       transform(options: Record<string, unknown>): {
@@ -36,27 +38,31 @@ function randomRoomCode() {
   return Array.from(bytes, (byte) => ROOM_ALPHABET[byte % ROOM_ALPHABET.length]).join("");
 }
 
-function roomStub(env: Env, code: string) {
-  return env.MEMORY_ROOM.get(env.MEMORY_ROOM.idFromName(code));
-}
-
-/** Upgrades a LAN player onto the Durable Object that owns their room code. */
-async function routeMemoryRoom(request: Request, url: URL, env: Env): Promise<Response> {
+/**
+ * Upgrades a player onto the Durable Object that owns their room code. Both
+ * head-to-head games allocate codes the same way, so they share this router.
+ */
+async function routeGameRoom(
+  request: Request,
+  url: URL,
+  namespace: DurableObjectNamespace,
+  reserveParams: Record<string, string>,
+): Promise<Response> {
   if (request.headers.get("Upgrade") !== "websocket") {
     return Response.json({ error: "Expected a WebSocket upgrade." }, { status: 426 });
   }
 
+  const stubFor = (code: string) => namespace.get(namespace.idFromName(code));
   let code = (url.searchParams.get("code") ?? "").trim().toUpperCase();
 
   if (code === "NEW") {
-    const difficulty = url.searchParams.get("difficulty") ?? "easy";
     code = "";
     for (let attempt = 0; attempt < ROOM_CODE_ATTEMPTS && !code; attempt += 1) {
       const candidate = randomRoomCode();
-      const reserveUrl = new URL("https://memory-room/reserve");
+      const reserveUrl = new URL("https://game-room/reserve");
       reserveUrl.searchParams.set("code", candidate);
-      reserveUrl.searchParams.set("difficulty", difficulty);
-      const reserved = await roomStub(env, candidate).fetch(reserveUrl, { method: "POST" });
+      for (const [key, value] of Object.entries(reserveParams)) reserveUrl.searchParams.set(key, value);
+      const reserved = await stubFor(candidate).fetch(reserveUrl, { method: "POST" });
       if (reserved.ok) code = candidate;
     }
     if (!code) return rejectSocket(CLOSE_NO_CAPACITY, "Unable to allocate a room code.");
@@ -66,7 +72,7 @@ async function routeMemoryRoom(request: Request, url: URL, env: Env): Promise<Re
 
   const target = new URL(url);
   target.searchParams.set("code", code);
-  return roomStub(env, code).fetch(new Request(target, request));
+  return stubFor(code).fetch(new Request(target, request));
 }
 
 const worker = {
@@ -74,7 +80,15 @@ const worker = {
     const url = new URL(request.url);
 
     if (url.pathname === "/api/memory/ws") {
-      return routeMemoryRoom(request, url, env);
+      return routeGameRoom(request, url, env.MEMORY_ROOM, {
+        difficulty: url.searchParams.get("difficulty") ?? "easy",
+      });
+    }
+
+    if (url.pathname === "/api/reaction/ws") {
+      return routeGameRoom(request, url, env.REACTION_ROOM, {
+        duration: url.searchParams.get("duration") ?? "30000",
+      });
     }
 
     if (url.pathname === "/_vinext/image") {
@@ -92,5 +106,5 @@ const worker = {
   },
 };
 
-export { MemoryRoom };
+export { MemoryRoom, ReactionRoom };
 export default worker;
