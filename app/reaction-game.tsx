@@ -3,19 +3,34 @@
 import type React from "react";
 import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import {
+  buildReactionSchedule,
+  HIT_GRACE,
+  LEAD_IN,
+  MISS_PENALTY,
+  type ReactionTarget as Target,
+  type ReactionTargetKind as TargetKind,
+  TARGET_SCORE,
+} from "./reaction-schedule";
+
 type Account = { id: string; nickname: string };
 
-type TargetKind = "normal" | "golden" | "trap";
+type GameMode = "solo" | "versus";
 
-type Target = {
-  id: string;
-  image: string;
-  kind: TargetKind;
-  x: number;
-  y: number;
-  showAt: number;
-  hideAt: number;
+type SoloRun = {
+  targets: Target[];
+  taken: Record<string, true>;
+  startedAt: number;
+  endsAt: number;
+  score: number;
+  hits: number;
+  misses: number;
+  traps: number;
+  /** Sum of times from a circle appearing to it being clicked. */
+  reactionTotal: number;
 };
+
+const BEST_STORAGE_KEY = "reaction-best-scores";
 
 type ReactionRoom = {
   code: string;
@@ -52,6 +67,14 @@ const KIND_LABEL: Record<TargetKind, string> = {
   golden: "×2",
   trap: "NO CLICK!",
 };
+
+function readBestScores(): Record<string, number> {
+  try {
+    return JSON.parse(window.localStorage.getItem(BEST_STORAGE_KEY) || "{}");
+  } catch {
+    return {};
+  }
+}
 
 function createPlayerId() {
   if (typeof window.crypto?.randomUUID === "function") return window.crypto.randomUUID();
@@ -92,6 +115,9 @@ export function ReactionGame({
   const [chatImagePending, setChatImagePending] = useState("");
   const [imagePool, setImagePool] = useState<string[]>([]);
   const [resumeAsking, setResumeAsking] = useState(false);
+  const [gameMode, setGameMode] = useState<GameMode>("solo");
+  const [solo, setSolo] = useState<SoloRun | null>(null);
+  const [bestScores, setBestScores] = useState<Record<string, number>>({});
 
   const socket = useRef<WebSocket | null>(null);
   const intent = useRef({ code: "", name: "", token: "", duration: 30_000 });
@@ -148,17 +174,39 @@ export function ReactionGame({
     };
   }, []);
 
+  useEffect(() => {
+    // Reading stored best scores is exactly the "sync an external store on
+    // mount" case; it cannot run during render because localStorage is
+    // unavailable while the page is server rendered.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setBestScores(readBestScores());
+  }, []);
+
   // A single rAF loop drives every circle's appear/disappear animation.
   useEffect(() => {
-    if (!room?.running) return;
+    if (!room?.running && !solo) return;
+    const advance = () => setNow(Date.now() + clockOffset.current);
     let frame = 0;
     const tick = () => {
-      setNow(Date.now() + clockOffset.current);
+      advance();
       frame = window.requestAnimationFrame(tick);
     };
     frame = window.requestAnimationFrame(tick);
-    return () => window.cancelAnimationFrame(frame);
-  }, [room?.running]);
+    // Browsers suspend rAF entirely while a tab is hidden, which would freeze
+    // the clock until the player came back. A timer keeps it moving; it is
+    // throttled in the background but never stopped.
+    const timer = window.setInterval(advance, 100);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.clearInterval(timer);
+    };
+  }, [room?.running, solo]);
+
+  const setVanishingFor = useCallback((target: Target) => {
+    const key = `${target.id}-${Math.random().toString(36).slice(2, 6)}`;
+    setVanishing((current) => [...current, { key, x: target.x, y: target.y, kind: target.kind, image: target.image }]);
+    window.setTimeout(() => setVanishing((current) => current.filter((entry) => entry.key !== key)), 420);
+  }, []);
 
   const addPop = useCallback((x: number, y: number, text: string, kind: TargetKind) => {
     const key = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
@@ -185,14 +233,12 @@ export function ReactionGame({
       const target = next.targets.find((candidate) => candidate.id === id);
       if (!target) continue;
 
-      const key = `${id}-${Math.random().toString(36).slice(2, 6)}`;
-      setVanishing((current) => [...current, { key, x: target.x, y: target.y, kind: target.kind, image: target.image }]);
-      window.setTimeout(() => setVanishing((current) => current.filter((entry) => entry.key !== key)), 420);
+      setVanishingFor(target);
 
       if (next.taken[id] !== next.playerIndex) continue;
       addPop(target.x, target.y, target.kind === "trap" ? "-1" : target.kind === "golden" ? "+2" : "+1", target.kind);
     }
-  }, [addPop]);
+  }, [addPop, setVanishingFor]);
 
   const disconnect = useCallback(() => {
     if (reconnectTimer.current !== null) {
@@ -332,12 +378,61 @@ export function ReactionGame({
     connect();
   };
 
+  // Practice runs entirely in the browser: no room, no server round trip, and
+  // no record. It plans the round with the very same generator the object uses,
+  // so the rhythm matches a real match exactly.
+  const soloFinished = solo !== null && now >= solo.endsAt;
+  const soloRunning = solo !== null && !soloFinished;
+
+  const startSolo = () => {
+    settledTargets.current.clear();
+    setPops([]);
+    setVanishing([]);
+    const startedAt = Date.now() + LEAD_IN;
+    setSolo({
+      targets: buildReactionSchedule(startedAt, duration, imagePool.length > 0 ? imagePool : [""]),
+      taken: {},
+      startedAt,
+      endsAt: startedAt + duration,
+      score: 0,
+      hits: 0,
+      misses: 0,
+      traps: 0,
+      reactionTotal: 0,
+    });
+  };
+
+  // Remember the best run per duration so practice has something to beat.
+  useEffect(() => {
+    if (!soloFinished || !solo) return;
+    const key = String(duration);
+    // Persisting the run is a side effect of the clock running out, so there is
+    // no event to hang it on.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setBestScores((current) => {
+      if ((current[key] ?? -1) >= solo.score) return current;
+      const next = { ...current, [key]: solo.score };
+      try {
+        window.localStorage.setItem(BEST_STORAGE_KEY, JSON.stringify(next));
+      } catch {
+        // The best score simply is not kept between visits.
+      }
+      return next;
+    });
+  }, [soloFinished, solo, duration]);
+
   const visibleTargets = useMemo(() => {
+    if (solo) {
+      if (!soloRunning) return [];
+      return solo.targets.filter(
+        (target) => now >= target.showAt && now <= target.hideAt && solo.taken[target.id] === undefined,
+      );
+    }
     if (!room?.running || room.startedAt === null || room.pausedBy !== null) return [];
     return room.targets.filter(
       (target) => now >= target.showAt && now <= target.hideAt && room.taken[target.id] === undefined,
     );
-  }, [now, room]);
+  }, [now, room, solo, soloRunning]);
 
   // The circles use the same photo pool as the matching game.
   useEffect(() => {
@@ -421,6 +516,27 @@ export function ReactionGame({
   // No optimistic label here: the score only shows once the object confirms
   // this player won the click, so losing the race never flashes a phantom +1.
   const hitTarget = (target: Target) => {
+    if (solo) {
+      if (!soloRunning || solo.taken[target.id]) return;
+      // The rAF clock is already ticking every frame, so it dates the click
+      // accurately enough for a reaction time without another impure call.
+      const clickedAt = now;
+      setSolo((current) => {
+        if (!current || current.taken[target.id]) return current;
+        return {
+          ...current,
+          taken: { ...current.taken, [target.id]: true },
+          score: Math.max(0, current.score + TARGET_SCORE[target.kind]),
+          hits: current.hits + (target.kind === "trap" ? 0 : 1),
+          traps: current.traps + (target.kind === "trap" ? 1 : 0),
+          reactionTotal: current.reactionTotal + (target.kind === "trap" ? 0 : Math.max(0, clickedAt - target.showAt)),
+        };
+      });
+      setVanishingFor(target);
+      addPop(target.x, target.y, target.kind === "trap" ? "-1" : target.kind === "golden" ? "+2" : "+1", target.kind);
+      if (target.kind === "trap") flashPenalty();
+      return;
+    }
     if (!room || !room.running || room.pausedBy !== null) return;
     send({ type: "hit", id: target.id });
     if (target.kind === "trap") flashPenalty();
@@ -429,9 +545,18 @@ export function ReactionGame({
   // Clicking anywhere that is not a circle costs a point. This one is always
   // the clicker's own doing, so the feedback can be immediate.
   const missArena = (event: React.PointerEvent<HTMLDivElement>) => {
-    if (!room?.running || room.completed || room.pausedBy !== null) return;
-    if (room.startedAt !== null && now < room.startedAt) return;
-    send({ type: "miss" });
+    if (solo) {
+      if (!soloRunning || now < solo.startedAt) return;
+      setSolo((current) => (current ? {
+        ...current,
+        score: Math.max(0, current.score + MISS_PENALTY),
+        misses: current.misses + 1,
+      } : current));
+    } else {
+      if (!room?.running || room.completed || room.pausedBy !== null) return;
+      if (room.startedAt !== null && now < room.startedAt) return;
+      send({ type: "miss" });
+    }
     const box = event.currentTarget.getBoundingClientRect();
     addPop(
       ((event.clientX - box.left) / box.width) * 100,
@@ -442,14 +567,24 @@ export function ReactionGame({
     flashPenalty();
   };
 
-  const secondsLeft = room?.endsAt && room.running ? Math.max(0, Math.ceil((room.endsAt - now) / 1000)) : null;
-  const countdown =
-    room?.startedAt && room.running && now < room.startedAt
+  const secondsLeft = solo
+    ? Math.max(0, Math.ceil((solo.endsAt - now) / 1000))
+    : room?.endsAt && room.running
+      ? Math.max(0, Math.ceil((room.endsAt - now) / 1000))
+      : null;
+  const countdown = solo
+    ? (now < solo.startedAt ? Math.max(1, Math.ceil((solo.startedAt - now) / 1000)) : null)
+    : room?.startedAt && room.running && now < room.startedAt
       ? Math.max(1, Math.ceil((room.startedAt - now) / 1000))
       : null;
 
   const names = [room?.players[0]?.name || "PLAYER 1", room?.players[1]?.name || "WAITING"];
   const mySeat = room?.playerIndex ?? 0;
+  const best = bestScores[String(duration)] ?? 0;
+  const soloAccuracy = solo && solo.hits + solo.misses + solo.traps > 0
+    ? Math.round((solo.hits / (solo.hits + solo.misses + solo.traps)) * 100)
+    : 0;
+  const soloReaction = solo && solo.hits > 0 ? Math.round(solo.reactionTotal / solo.hits) : 0;
   const winner = room ? (room.scores[0] === room.scores[1] ? -1 : room.scores[0] > room.scores[1] ? 0 : 1) : -1;
 
   return (
@@ -457,15 +592,41 @@ export function ReactionGame({
       <header className="memory-toolbar">
         <div className="memory-heading">
           <strong>latency-probe.bench.ts</strong>
+          <div className="memory-mode-switch" aria-label="게임 모드">
+            <button
+              className={gameMode === "solo" ? "active" : ""}
+              onClick={() => { disconnect(); setRoom(null); setGameMode("solo"); }}
+            >
+              PRACTICE
+            </button>
+            <button
+              className={gameMode === "versus" ? "active" : ""}
+              onClick={() => { setSolo(null); setGameMode("versus"); }}
+            >
+              VERSUS
+            </button>
+          </div>
         </div>
         <div className="memory-scoreboard" aria-live="polite">
-          <span className={mySeat === 0 ? "turn-active" : ""}><small>{names[0]}</small><b>{room?.scores[0] ?? 0}</b></span>
-          <i>:</i>
-          <span className={mySeat === 1 ? "turn-active" : ""}><small>{names[1]}</small><b>{room?.scores[1] ?? 0}</b></span>
+          {gameMode === "solo" ? (
+            <>
+              <span className="turn-active"><small>SCORE</small><b>{solo?.score ?? 0}</b></span>
+              <i>/</i>
+              <span><small>BEST</small><b>{best}</b></span>
+            </>
+          ) : (
+            <>
+              <span className={mySeat === 0 ? "turn-active" : ""}><small>{names[0]}</small><b>{room?.scores[0] ?? 0}</b></span>
+              <i>:</i>
+              <span className={mySeat === 1 ? "turn-active" : ""}><small>{names[1]}</small><b>{room?.scores[1] ?? 0}</b></span>
+            </>
+          )}
         </div>
         <div className="memory-stats">
           <span>TIME <b>{secondsLeft === null ? `${duration / 1000}s` : `${secondsLeft}s`}</b></span>
-          <span>ROOM <b>{room?.code ?? "—"}</b></span>
+          {gameMode === "solo"
+            ? <span>HIT <b>{solo?.hits ?? 0}</b></span>
+            : <span>ROOM <b>{room?.code ?? "—"}</b></span>}
         </div>
         <div className="memory-actions">
           <div className="difficulty-switch" aria-label="게임 시간">
@@ -474,13 +635,19 @@ export function ReactionGame({
                 key={option.ms}
                 className={duration === option.ms ? "active" : ""}
                 onClick={() => setDuration(option.ms)}
-                disabled={Boolean(room && !room.completed && room.running)}
+                disabled={soloRunning || Boolean(room && !room.completed && room.running)}
               >
                 {option.label}
               </button>
             ))}
           </div>
-          {room?.isHost && !room.waiting && (!room.running || room.completed) && (
+          {gameMode === "solo" && !soloRunning && (
+            <button className="memory-plain-button" onClick={startSolo}>{solo ? "Try again" : "Start"}</button>
+          )}
+          {gameMode === "solo" && soloRunning && (
+            <button className="memory-plain-button" onClick={() => setSolo(null)}>Stop</button>
+          )}
+          {gameMode === "versus" && room?.isHost && !room.waiting && (!room.running || room.completed) && (
             <button className="memory-plain-button" onClick={() => send({ type: "start", duration })}>
               {room.completed ? "Play again" : "Start"}
             </button>
@@ -489,7 +656,73 @@ export function ReactionGame({
         </div>
       </header>
 
-      {!room && !account && !playAsGuest ? (
+      {gameMode === "solo" ? (
+        <div className="reaction-arena-wrap">
+          <div className={`reaction-arena ${penalty ? "penalised" : ""}`} aria-label="연습 클릭 영역" onPointerDown={missArena}>
+            {visibleTargets.map((target) => {
+              const life = (now - target.showAt) / (target.hideAt - target.showAt);
+              return (
+                <button
+                  key={target.id}
+                  type="button"
+                  className={`reaction-target ${target.kind}`}
+                  style={{ left: `${target.x}%`, top: `${target.y}%`, ["--life" as string]: String(Math.min(1, Math.max(0, life))) }}
+                  onPointerDown={(event) => { event.stopPropagation(); hitTarget(target); }}
+                  aria-label={KIND_LABEL[target.kind]}
+                >
+                  <img src={target.image} alt="" draggable={false} />
+                  <span>{KIND_LABEL[target.kind]}</span>
+                </button>
+              );
+            })}
+
+            {vanishing.map((ghost) => (
+              <div key={ghost.key} className={`reaction-vanish ${ghost.kind}`} style={{ left: `${ghost.x}%`, top: `${ghost.y}%` }} aria-hidden="true">
+                <img src={ghost.image} alt="" draggable={false} />
+              </div>
+            ))}
+
+            {pops.map((entry) => (
+              <div key={entry.key} className={`reaction-pop ${entry.kind}`} style={{ left: `${entry.x}%`, top: `${entry.y}%` }} aria-hidden="true">
+                {entry.text}
+              </div>
+            ))}
+
+            {penalty && <div className="reaction-penalty" role="status"><span>MISS −1</span></div>}
+
+            {countdown !== null && (
+              <div className="reaction-countdown" role="status"><b>{countdown}</b><small>READY</small></div>
+            )}
+
+            {!solo && (
+              <div className="reaction-idle" role="status">
+                <strong>연습 모드</strong>
+                <p>혼자서 마음껏 연습할 수 있습니다. 시간을 고르고 Start를 누르세요.</p>
+                <p>전적에는 기록되지 않습니다.</p>
+              </div>
+            )}
+
+            {soloFinished && solo && (
+              <div className="memory-complete" role="dialog" aria-label="연습 결과">
+                <div>
+                  <small>PRACTICE DONE</small>
+                  <strong>{solo.score}점</strong>
+                  <div className="solo-stats">
+                    <span><b>{solo.hits}</b><small>명중</small></span>
+                    <span><b>{solo.misses}</b><small>헛클릭</small></span>
+                    <span><b>{solo.traps}</b><small>함정</small></span>
+                    <span><b>{soloAccuracy}%</b><small>정확도</small></span>
+                    <span><b>{soloReaction}ms</b><small>평균 반응</small></span>
+                  </div>
+                  <p>{solo.score >= best ? "최고 기록을 세웠습니다!" : `최고 기록 ${best}점`}</p>
+                  <button onClick={startSolo}>다시 연습 · {DURATIONS.find((d) => d.ms === duration)?.label}</button>
+                  <button onClick={() => setGameMode("versus")}>대전하러 가기</button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      ) : !room && !account && !playAsGuest ? (
         <div className="memory-lobby">
           <div className="lobby-signin">
             <small>PLAYER SIGN IN</small>
