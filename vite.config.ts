@@ -32,10 +32,16 @@ function bindingConfig(env: Record<string, string>) {
     // LAN rooms live in a Durable Object so both players share one authoritative
     // copy of the board over a WebSocket instead of polling a database.
     durable_objects: {
-      bindings: [{ name: "MEMORY_ROOM", class_name: "MemoryRoom" }],
+      bindings: [
+        { name: "MEMORY_ROOM", class_name: "MemoryRoom" },
+        { name: "REACTION_ROOM", class_name: "ReactionRoom" },
+      ],
     },
     // SQLite-backed classes are the ones available on the Workers free plan.
-    migrations: [{ tag: "v1", new_sqlite_classes: ["MemoryRoom"] }],
+    migrations: [
+      { tag: "v1", new_sqlite_classes: ["MemoryRoom"] },
+      { tag: "v2", new_sqlite_classes: ["ReactionRoom"] },
+    ],
   };
 }
 
