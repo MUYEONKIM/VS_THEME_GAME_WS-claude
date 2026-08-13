@@ -1,6 +1,15 @@
 /** One Durable Object instance per reaction-battle room code. */
 import { DurableObject } from "cloudflare:workers";
 import { MEMORY_CARD_IMAGES } from "../app/memory-assets";
+import {
+  buildReactionSchedule,
+  HIT_GRACE,
+  LEAD_IN,
+  MISS_PENALTY,
+  normalizeReactionDuration,
+  type ReactionTarget,
+  TARGET_SCORE,
+} from "../app/reaction-schedule";
 import { listUploadedImageKeys } from "../server/memory-image-store";
 import { playerForToken } from "../server/accounts";
 import { GUEST_ID, recordMatch } from "../server/stats";
@@ -12,22 +21,6 @@ import {
   CLOSE_ROOM_MISSING,
   rejectSocket,
 } from "./memory-room";
-
-export const REACTION_DURATIONS = [10_000, 30_000, 60_000] as const;
-export type ReactionDuration = (typeof REACTION_DURATIONS)[number];
-
-type TargetKind = "normal" | "golden" | "trap";
-
-type Target = {
-  id: string;
-  image: string;
-  kind: TargetKind;
-  /** Percentages of the play area, so both clients place them identically. */
-  x: number;
-  y: number;
-  showAt: number;
-  hideAt: number;
-};
 
 type Player = {
   id: string;
@@ -52,7 +45,7 @@ type Room = {
   durationMs: number;
   players: Player[];
   scores: [number, number];
-  targets: Target[];
+  targets: ReactionTarget[];
   /** Target id -> seat that claimed it first. */
   taken: Record<string, 0 | 1>;
   messages: ChatMessage[];
@@ -67,30 +60,10 @@ type Room = {
 };
 
 const ROOM_LIFETIME = 2 * 60 * 60 * 1000;
-const LEAD_IN = 3_000;
-const FIRST_SPAWN = 400;
-/** Tighter than a circle's lifetime, so several are on screen at once. */
-const MIN_GAP = 230;
-const GAP_SPREAD = 330;
-const TAIL_MARGIN = 900;
-/** How long each kind stays clickable. */
-const LIFETIME: Record<TargetKind, number> = { normal: 1150, golden: 950, trap: 1350 };
-/** Late clicks are still honoured this long after a target hides. */
-const GRACE = 260;
-const SCORE: Record<TargetKind, number> = { normal: 1, golden: 2, trap: -1 };
-/** Clicking empty space costs a point. */
-const MISS_PENALTY = -1;
 const MISS_COOLDOWN = 120;
 const MAX_MESSAGES = 80;
 
 type Attachment = { playerId: string };
-
-function normalizeDuration(value: unknown): ReactionDuration {
-  const candidate = Number(value);
-  return (REACTION_DURATIONS as readonly number[]).includes(candidate)
-    ? (candidate as ReactionDuration)
-    : 30_000;
-}
 
 function uploadedImageUrl(key: string) {
   return `/api/memory-images?key=${encodeURIComponent(key)}`;
@@ -101,50 +74,8 @@ async function imagePool() {
   return [...MEMORY_CARD_IMAGES, ...uploaded];
 }
 
-function rollKind(): TargetKind {
-  const roll = Math.random();
-  if (roll < 0.08) return "golden";
-  if (roll < 0.2) return "trap";
-  return "normal";
-}
-
-/**
- * The whole round is planned when it starts and sent once, so playing only
- * costs a message per click instead of a server tick per circle.
- */
 async function buildSchedule(startAt: number, durationMs: number) {
-  const images = await imagePool();
-  const targets: Target[] = [];
-  let offset = FIRST_SPAWN;
-
-  while (offset < durationMs - TAIL_MARGIN) {
-    const kind = rollKind();
-    const showAt = startAt + offset;
-    // Several circles now overlap in time, so keep clear of every one that is
-    // still on screen rather than just the previous.
-    const concurrent = targets.filter((candidate) => candidate.hideAt > showAt);
-    let x = 0;
-    let y = 0;
-    for (let attempt = 0; attempt < 8; attempt += 1) {
-      x = 8 + Math.random() * 84;
-      y = 10 + Math.random() * 78;
-      if (concurrent.every((other) => Math.hypot(other.x - x, other.y - y) > 17)) break;
-    }
-
-    targets.push({
-      id: `${targets.length.toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
-      image: images[Math.floor(Math.random() * images.length)] ?? "",
-      kind,
-      x: Math.round(x * 10) / 10,
-      y: Math.round(y * 10) / 10,
-      showAt,
-      hideAt: showAt + LIFETIME[kind],
-    });
-
-    offset += MIN_GAP + Math.random() * GAP_SPREAD;
-  }
-
-  return targets;
+  return buildReactionSchedule(startAt, durationMs, await imagePool());
 }
 
 function publicRoom(room: Room, playerId: string) {
@@ -197,7 +128,7 @@ export class ReactionRoom extends DurableObject {
       if (!/^[A-Z0-9]{4}$/.test(code)) return json({ error: "Invalid room code." }, 400);
       this.room = {
         code,
-        durationMs: normalizeDuration(url.searchParams.get("duration")),
+        durationMs: normalizeReactionDuration(url.searchParams.get("duration")),
         players: [],
         scores: [0, 0],
         targets: [],
@@ -292,7 +223,7 @@ export class ReactionRoom extends DurableObject {
       }
       if (room.startedAt !== null && !room.completed) return;
 
-      room.durationMs = normalizeDuration(payload.duration ?? room.durationMs);
+      room.durationMs = normalizeReactionDuration(payload.duration ?? room.durationMs);
       room.scores = [0, 0];
       room.taken = {};
       room.pausedBy = null;
@@ -373,11 +304,11 @@ export class ReactionRoom extends DurableObject {
       if (room.taken[targetId] !== undefined) return;
 
       const now = Date.now();
-      if (now < target.showAt - GRACE || now > target.hideAt + GRACE) return;
+      if (now < target.showAt - HIT_GRACE || now > target.hideAt + HIT_GRACE) return;
 
       room.taken[targetId] = playerIndex as 0 | 1;
       // Scores never drop below zero, so a bad run cannot bury a player.
-      room.scores[playerIndex] = Math.max(0, room.scores[playerIndex] + SCORE[target.kind]);
+      room.scores[playerIndex] = Math.max(0, room.scores[playerIndex] + TARGET_SCORE[target.kind]);
       await this.persist();
       this.broadcast();
       await this.settleIfOver();
