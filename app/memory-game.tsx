@@ -489,6 +489,13 @@ export function MemoryGame({
   };
 
   // A staged photo goes out first; whatever is typed stays for the next message.
+  // Photos arrive with no height until they decode, so the list is nudged
+  // again once each one loads.
+  const scrollChatToBottom = useCallback(() => {
+    const list = chatListRef.current;
+    if (list) list.scrollTop = list.scrollHeight;
+  }, []);
+
   const sendChat = () => {
     if (!lanRoom) return;
     if (chatImagePending) {
@@ -831,9 +838,11 @@ export function MemoryGame({
   }, [difficulty, lanRoom?.code, mode, schedule, showMatchEffect, view]);
 
   useEffect(() => {
-    if (!chatListRef.current) return;
-    chatListRef.current.scrollTop = chatListRef.current.scrollHeight;
-  }, [lanRoom?.messages.length]);
+    scrollChatToBottom();
+    // Keyed on the newest message rather than the count: the server caps the
+    // log at 80 and drops the oldest, so the count stops changing after that
+    // and the chat would quietly stop following along.
+  }, [scrollChatToBottom, lanRoom?.messages[lanRoom.messages.length - 1]?.id]);
 
   useEffect(() => {
     if (mode === "lan" && lanRoom?.completed) setRematchDifficulty(lanRoom.difficulty);
@@ -1118,7 +1127,7 @@ export function MemoryGame({
                     <article key={message.id} className={message.playerIndex === lanRoom.playerIndex ? "mine" : ""}>
                       <div><b>{message.name}</b><time>{new Date(message.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</time></div>
                       {message.image
-                        ? <img className="chat-photo" src={message.image} alt="보낸 사진" loading="lazy" draggable={false} />
+                        ? <img className="chat-photo" src={message.image} alt="보낸 사진" loading="lazy" draggable={false} onLoad={scrollChatToBottom} />
                         : <span>{message.text}</span>}
                     </article>
                   ))}
