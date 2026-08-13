@@ -28,6 +28,8 @@ CREATE INDEX IF NOT EXISTS sessions_expires_idx ON sessions(expires_at);
 -- player cannot dodge a loss by disconnecting.
 CREATE TABLE IF NOT EXISTS matches (
   id TEXT PRIMARY KEY,
+  -- Which head-to-head game this result came from.
+  game TEXT NOT NULL DEFAULT 'memory',
   room_code TEXT NOT NULL,
   player_a TEXT NOT NULL,
   player_b TEXT NOT NULL,
