@@ -1,5 +1,6 @@
 "use client";
 
+import type React from "react";
 import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 type Account = { id: string; nickname: string };
@@ -81,7 +82,10 @@ export function ReactionGame({
   const [connecting, setConnecting] = useState(false);
   // Ticks the render loop; the authoritative clock is the server's.
   const [now, setNow] = useState(() => Date.now());
-  const [pop, setPop] = useState<{ id: string; kind: TargetKind; seat: 0 | 1 } | null>(null);
+  /** Floating score labels, shown only to whoever actually earned them. */
+  const [pops, setPops] = useState<Array<{ key: string; x: number; y: number; text: string; kind: TargetKind }>>([]);
+  /** Burst left behind by a circle that was just claimed, shown to both. */
+  const [vanishing, setVanishing] = useState<Array<{ key: string; x: number; y: number; kind: TargetKind; image: string }>>([]);
   const [penalty, setPenalty] = useState(false);
   const [chatInput, setChatInput] = useState("");
   const [chatPickerOpen, setChatPickerOpen] = useState(false);
@@ -96,8 +100,9 @@ export function ReactionGame({
   const connectRef = useRef<() => void>(() => {});
   const playerId = useRef("");
   const clockOffset = useRef(0);
-  const popTimer = useRef<number | null>(null);
   const penaltyTimer = useRef<number | null>(null);
+  /** Targets already animated, so a repeated state message does not replay them. */
+  const settledTargets = useRef<Set<string>>(new Set());
   const chatListRef = useRef<HTMLDivElement>(null);
 
   const getPlayerId = useCallback(() => {
@@ -155,6 +160,40 @@ export function ReactionGame({
     return () => window.cancelAnimationFrame(frame);
   }, [room?.running]);
 
+  const addPop = useCallback((x: number, y: number, text: string, kind: TargetKind) => {
+    const key = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+    setPops((current) => [...current, { key, x, y, text, kind }]);
+    window.setTimeout(() => setPops((current) => current.filter((entry) => entry.key !== key)), 620);
+  }, []);
+
+  /**
+   * Runs on every state message: any target the object has just handed out
+   * gets a burst on both screens, but the score label only appears for the
+   * player who actually won the click.
+   */
+  const announceSettled = useCallback((next: ReactionRoom) => {
+    const seen = settledTargets.current;
+    const takenIds = Object.keys(next.taken);
+    if (takenIds.length === 0) {
+      seen.clear();
+      return;
+    }
+
+    for (const id of takenIds) {
+      if (seen.has(id)) continue;
+      seen.add(id);
+      const target = next.targets.find((candidate) => candidate.id === id);
+      if (!target) continue;
+
+      const key = `${id}-${Math.random().toString(36).slice(2, 6)}`;
+      setVanishing((current) => [...current, { key, x: target.x, y: target.y, kind: target.kind, image: target.image }]);
+      window.setTimeout(() => setVanishing((current) => current.filter((entry) => entry.key !== key)), 420);
+
+      if (next.taken[id] !== next.playerIndex) continue;
+      addPop(target.x, target.y, target.kind === "trap" ? "-1" : target.kind === "golden" ? "+2" : "+1", target.kind);
+    }
+  }, [addPop]);
+
   const disconnect = useCallback(() => {
     if (reconnectTimer.current !== null) {
       window.clearTimeout(reconnectTimer.current);
@@ -200,6 +239,7 @@ export function ReactionGame({
         // Trust the object's clock so both screens agree on timings.
         clockOffset.current = payload.room.serverNow - Date.now();
         intent.current.code = payload.room.code;
+        announceSettled(payload.room);
         setRoom(payload.room);
         setDuration(payload.room.durationMs);
         setNetworkError("");
@@ -378,23 +418,27 @@ export function ReactionGame({
     penaltyTimer.current = window.setTimeout(() => setPenalty(false), 420);
   }, []);
 
+  // No optimistic label here: the score only shows once the object confirms
+  // this player won the click, so losing the race never flashes a phantom +1.
   const hitTarget = (target: Target) => {
     if (!room || !room.running || room.pausedBy !== null) return;
     send({ type: "hit", id: target.id });
-    setPop({ id: target.id, kind: target.kind, seat: room.playerIndex as 0 | 1 });
-    if (popTimer.current !== null) window.clearTimeout(popTimer.current);
-    popTimer.current = window.setTimeout(() => setPop(null), 520);
     if (target.kind === "trap") flashPenalty();
   };
 
-  // Clicking anywhere that is not a circle costs a point.
-  const missArena = () => {
+  // Clicking anywhere that is not a circle costs a point. This one is always
+  // the clicker's own doing, so the feedback can be immediate.
+  const missArena = (event: React.PointerEvent<HTMLDivElement>) => {
     if (!room?.running || room.completed || room.pausedBy !== null) return;
     if (room.startedAt !== null && now < room.startedAt) return;
     send({ type: "miss" });
-    setPop({ id: "miss", kind: "trap", seat: room.playerIndex as 0 | 1 });
-    if (popTimer.current !== null) window.clearTimeout(popTimer.current);
-    popTimer.current = window.setTimeout(() => setPop(null), 520);
+    const box = event.currentTarget.getBoundingClientRect();
+    addPop(
+      ((event.clientX - box.left) / box.width) * 100,
+      ((event.clientY - box.top) / box.height) * 100,
+      "-1",
+      "trap",
+    );
     flashPenalty();
   };
 
@@ -549,7 +593,17 @@ export function ReactionGame({
               );
             })}
 
-            {pop && <div className={`reaction-pop ${pop.kind}`} aria-hidden="true">{pop.kind === "trap" ? "-1" : pop.kind === "golden" ? "+2" : "+1"}</div>}
+            {vanishing.map((ghost) => (
+              <div key={ghost.key} className={`reaction-vanish ${ghost.kind}`} style={{ left: `${ghost.x}%`, top: `${ghost.y}%` }} aria-hidden="true">
+                <img src={ghost.image} alt="" draggable={false} />
+              </div>
+            ))}
+
+            {pops.map((entry) => (
+              <div key={entry.key} className={`reaction-pop ${entry.kind}`} style={{ left: `${entry.x}%`, top: `${entry.y}%` }} aria-hidden="true">
+                {entry.text}
+              </div>
+            ))}
             {penalty && <div className="reaction-penalty" role="status"><span>MISS −1</span></div>}
 
             {countdown !== null && (
