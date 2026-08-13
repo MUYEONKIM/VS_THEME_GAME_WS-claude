@@ -38,6 +38,15 @@ type Player = {
   lastMissAt?: number;
 };
 
+type ChatMessage = {
+  id: string;
+  playerIndex: 0 | 1;
+  name: string;
+  text: string;
+  image?: string;
+  at: number;
+};
+
 type Room = {
   code: string;
   durationMs: number;
@@ -46,8 +55,12 @@ type Room = {
   targets: Target[];
   /** Target id -> seat that claimed it first. */
   taken: Record<string, 0 | 1>;
+  messages: ChatMessage[];
   startedAt: number | null;
   endsAt: number | null;
+  /** Seat that hit Esc, and when, so the clock can be shifted on resume. */
+  pausedBy: 0 | 1 | null;
+  pausedAt: number | null;
   completed: boolean;
   recorded: boolean;
   updatedAt: number;
@@ -67,6 +80,7 @@ const SCORE: Record<TargetKind, number> = { normal: 1, golden: 2, trap: -1 };
 /** Clicking empty space costs a point. */
 const MISS_PENALTY = -1;
 const MISS_COOLDOWN = 120;
+const MAX_MESSAGES = 80;
 
 type Attachment = { playerId: string };
 
@@ -140,8 +154,11 @@ function publicRoom(room: Room, playerId: string) {
     scores: room.scores,
     targets: room.targets,
     taken: room.taken,
+    messages: room.messages,
     startedAt: room.startedAt,
     endsAt: room.endsAt,
+    pausedBy: room.pausedBy,
+    pausedByName: room.pausedBy === null ? "" : (room.players[room.pausedBy]?.name ?? ""),
     running: room.startedAt !== null && !room.completed,
     completed: room.completed,
     waiting: room.players.length < 2,
@@ -182,8 +199,11 @@ export class ReactionRoom extends DurableObject {
         scores: [0, 0],
         targets: [],
         taken: {},
+        messages: [],
         startedAt: null,
         endsAt: null,
+        pausedBy: null,
+        pausedAt: null,
         completed: false,
         recorded: false,
         updatedAt: Date.now(),
@@ -272,6 +292,8 @@ export class ReactionRoom extends DurableObject {
       room.durationMs = normalizeDuration(payload.duration ?? room.durationMs);
       room.scores = [0, 0];
       room.taken = {};
+      room.pausedBy = null;
+      room.pausedAt = null;
       room.completed = false;
       room.recorded = false;
       // The lead-in gives both screens time to show a countdown.
@@ -283,7 +305,63 @@ export class ReactionRoom extends DurableObject {
       return;
     }
 
+    if (type === "chat") {
+      if (room.players.length < 2) {
+        sendError(socket, "상대를 기다리는 중입니다.");
+        return;
+      }
+      const text = String(payload.text ?? "").replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, "").trim().slice(0, 160);
+      const image = String(payload.image ?? "");
+      // Only photos this game already serves may be shared.
+      if (image && !(await imagePool()).includes(image)) {
+        sendError(socket, "보낼 수 없는 사진입니다.");
+        return;
+      }
+      if (!text && !image) return;
+      room.messages.push({
+        id: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+        playerIndex: playerIndex as 0 | 1,
+        name: room.players[playerIndex].name,
+        text,
+        image: image || undefined,
+        at: Date.now(),
+      });
+      if (room.messages.length > MAX_MESSAGES) room.messages.splice(0, room.messages.length - MAX_MESSAGES);
+      await this.persist();
+      this.broadcast();
+      return;
+    }
+
+    // Esc freezes the clock. The whole schedule is shifted on resume, so no
+    // circle slips past while a player is away.
+    if (type === "pause") {
+      if (room.pausedBy === null && room.startedAt !== null && !room.completed) {
+        room.pausedBy = playerIndex as 0 | 1;
+        room.pausedAt = Date.now();
+        await this.persist();
+        this.broadcast();
+      }
+      return;
+    }
+
+    if (type === "resume") {
+      if (room.pausedBy !== playerIndex || room.pausedAt === null) return;
+      const shift = Date.now() - room.pausedAt;
+      if (room.startedAt !== null) room.startedAt += shift;
+      if (room.endsAt !== null) room.endsAt += shift;
+      for (const target of room.targets) {
+        target.showAt += shift;
+        target.hideAt += shift;
+      }
+      room.pausedBy = null;
+      room.pausedAt = null;
+      await this.persist();
+      this.broadcast();
+      return;
+    }
+
     if (type === "hit") {
+      if (room.pausedBy !== null) return;
       if (room.startedAt === null || room.completed) return;
       const targetId = String(payload.id ?? "");
       const target = room.targets.find((candidate) => candidate.id === targetId);
@@ -304,6 +382,7 @@ export class ReactionRoom extends DurableObject {
     }
 
     if (type === "miss") {
+      if (room.pausedBy !== null) return;
       if (room.startedAt === null || room.completed || Date.now() < room.startedAt) return;
       const player = room.players[playerIndex];
       const now = Date.now();
@@ -337,7 +416,10 @@ export class ReactionRoom extends DurableObject {
   /** Ends the round once the clock runs out, and writes the result once. */
   private async settleIfOver() {
     const room = this.room;
-    if (!room || room.completed || room.endsAt === null || Date.now() < room.endsAt) return false;
+    // A paused clock must not run out while a player is away.
+    if (!room || room.completed || room.pausedBy !== null || room.endsAt === null || Date.now() < room.endsAt) {
+      return false;
+    }
 
     room.completed = true;
     await this.persist();
@@ -375,8 +457,9 @@ export class ReactionRoom extends DurableObject {
     const room = this.room;
     if (!room) return;
     // One alarm for the whole round: either the finish line or the cleanup.
-    const next = room.endsAt !== null && !room.completed ? room.endsAt : room.updatedAt + ROOM_LIFETIME;
-    await this.ctx.storage.setAlarm(next);
+    // While paused there is no finish line to wait for.
+    const running = room.endsAt !== null && !room.completed && room.pausedBy === null;
+    await this.ctx.storage.setAlarm(running ? (room.endsAt as number) : room.updatedAt + ROOM_LIFETIME);
   }
 
   private broadcast() {
