@@ -19,6 +19,8 @@ export type OpponentRow = PlayerRecord & {
 };
 
 export type FinishedMatch = {
+  /** Which of the two head-to-head games produced this result. */
+  game?: "memory" | "reaction";
   roomCode: string;
   playerA: string;
   playerB: string;
@@ -62,11 +64,12 @@ export async function recordMatch(match: FinishedMatch) {
   if (!match.winner) return;
   await db
     .prepare(`
-      INSERT INTO matches (id, room_code, player_a, player_b, score_a, score_b, winner, difficulty, moves, finished_at)
-      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+      INSERT INTO matches (id, game, room_code, player_a, player_b, score_a, score_b, winner, difficulty, moves, finished_at)
+      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
     `)
     .bind(
       crypto.randomUUID(),
+      match.game ?? "memory",
       match.roomCode,
       match.playerA,
       match.playerB,
