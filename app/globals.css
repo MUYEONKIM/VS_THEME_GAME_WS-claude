@@ -611,6 +611,51 @@ body.resizing-terminal, body.resizing-terminal * { cursor: ns-resize !important;
   .pause-bars i { animation: none; }
 }
 
+/* Reaction battle: shares the arcade chrome, adds its own play area. */
+.reaction-game { position: relative; min-width: 0; min-height: 0; flex: 1; display: flex; flex-direction: column; overflow: hidden; background: #1f1f1f; color: #cccccc; font-family: var(--mono); }
+.reaction-arena-wrap { min-width: 0; min-height: 0; flex: 1; display: flex; padding: 12px; }
+.reaction-arena { position: relative; flex: 1; min-width: 0; min-height: 0; border: 1px solid #2d2d2d; border-radius: 4px; background: radial-gradient(circle at 50% 40%, #232323, #191919 70%); overflow: hidden; }
+
+.reaction-target { position: absolute; z-index: 2; width: 88px; height: 88px; margin: -44px 0 0 -44px; padding: 0; border: 3px solid #4a9bd4; border-radius: 50%; background: #101010; cursor: pointer; overflow: hidden; animation: target-in 130ms ease-out; }
+.reaction-target img { width: 100%; height: 100%; display: block; object-fit: cover; opacity: .82; }
+.reaction-target span { position: absolute; inset: auto 0 8px; color: #ffffff; font: 700 11px/1 var(--mono); letter-spacing: .5px; text-shadow: 0 1px 4px #000c; }
+/* The ring drains as the circle runs out of time. */
+.reaction-target::after { content: ""; position: absolute; inset: -3px; border-radius: 50%; box-shadow: inset 0 0 0 3px #4a9bd4; opacity: calc(1 - var(--life, 0)); }
+.reaction-target:hover { filter: brightness(1.15); }
+.reaction-target.golden { border-color: #f0c14b; box-shadow: 0 0 18px #d4a12a77; }
+.reaction-target.golden::after { box-shadow: inset 0 0 0 3px #f0c14b; }
+.reaction-target.golden span { color: #ffe9a8; }
+.reaction-target.trap { border-color: #d45a5a; box-shadow: 0 0 16px #c0505055; }
+.reaction-target.trap::after { box-shadow: inset 0 0 0 3px #d45a5a; }
+.reaction-target.trap span { color: #ffc4c4; }
+.reaction-target.trap img { opacity: .34; filter: grayscale(1); }
+
+@keyframes target-in { from { transform: scale(.55); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+
+.reaction-pop { position: absolute; left: 50%; top: 12%; z-index: 4; transform: translateX(-50%); color: #7ec97e; font: 700 34px/1 var(--mono); text-shadow: 0 2px 10px #000; pointer-events: none; animation: pop-rise 520ms ease-out forwards; }
+.reaction-pop.golden { color: #ffd970; }
+.reaction-pop.trap { color: #e08c8c; }
+@keyframes pop-rise { from { opacity: 1; transform: translate(-50%, 8px); } to { opacity: 0; transform: translate(-50%, -22px); } }
+
+/* Clicking empty space costs a point; only the offender's screen flashes. */
+.reaction-arena.penalised { box-shadow: inset 0 0 0 2px #c0505088, inset 0 0 70px #c0505033; }
+.reaction-penalty { position: absolute; inset: 0; z-index: 6; display: grid; place-items: center; background: #c0505022; pointer-events: none; animation: penalty-flash 420ms ease-out forwards; }
+.reaction-penalty span { padding: 6px 14px; border: 1px solid #d45a5a; border-radius: 3px; background: #2b1a1ad9; color: #ffc4c4; font: 700 12px/1 var(--mono); letter-spacing: 1px; }
+@keyframes penalty-flash { from { opacity: 1; } to { opacity: 0; } }
+
+.reaction-countdown { position: absolute; inset: 0; z-index: 5; display: grid; place-content: center; place-items: center; gap: 6px; background: #14141ac9; }
+.reaction-countdown b { color: #ffffff; font-size: 72px; font-weight: 600; line-height: 1; animation: target-in 200ms ease-out; }
+.reaction-countdown small { color: #9a9a9a; font-size: 10px; letter-spacing: 3px; }
+
+.reaction-idle { position: absolute; inset: 0; z-index: 3; display: grid; place-content: center; place-items: center; gap: 8px; text-align: center; }
+.reaction-idle strong { color: #d4d4d4; font-size: 16px; }
+.reaction-idle p { margin: 0; color: #8b8b8b; font: 10px/16px var(--mono); }
+
+@media (prefers-reduced-motion: reduce) {
+  .reaction-target, .reaction-countdown b { animation: none; }
+  .reaction-pop { animation-duration: 1ms; }
+}
+
 .prompt-line { color: #eee; }
 .terminal-cursor { display: inline-block; width: 7px; height: 15px; background: #b9b9b9; vertical-align: -3px; animation: blink 1s step-end infinite; }
 
