@@ -210,6 +210,7 @@ export default function Home() {
   const [memoryOpen, setMemoryOpen] = useState(false);
   const [memoryHidden, setMemoryHidden] = useState(false);
   const [reactionOpen, setReactionOpen] = useState(false);
+  const [reactionHidden, setReactionHidden] = useState(false);
   const { activeGame, gameView, launchGame: startGame, closeGame, restartGame, handleGameKey, handleGameKeyUp } = useTerminalGames();
   const [terminalHistory, setTerminalHistory] = useState<string[]>([
     "PS C:\\Users\\dev\\atlas-api> npm run dev",
@@ -280,6 +281,7 @@ export default function Home() {
       setMemoryOpen(false);
       setMemoryHidden(false);
       setReactionOpen(false);
+      setReactionHidden(false);
       setTerminalOpen(terminalWasOpenRef.current);
     }
     setActiveFile(name);
@@ -319,7 +321,13 @@ export default function Home() {
 
   const closeReactionGame = () => {
     setReactionOpen(false);
+    setReactionHidden(false);
     setTerminalOpen(terminalWasOpenRef.current);
+  };
+
+  const hideReactionGame = (hidden: boolean) => {
+    setReactionHidden(hidden);
+    setTerminalOpen(hidden ? terminalWasOpenRef.current : false);
   };
 
   const closeMemoryGame = () => {
@@ -436,18 +444,18 @@ export default function Home() {
 
         <section className="main-pane">
           <div className="editor-tabs">
-            <button className="tab active"><FileIcon kind="ts" /><span>{reactionOpen ? reactionGame.name : memoryOpen && !memoryHidden ? editorGame.name : activeFile}</span><span className="tab-dot">●</span></button>
+            <button className="tab active"><FileIcon kind="ts" /><span>{reactionOpen && !reactionHidden ? reactionGame.name : memoryOpen && !memoryHidden ? editorGame.name : activeFile}</span><span className="tab-dot">●</span></button>
             <div className="editor-actions"><button title="Split Editor">▯</button><button title="More Actions">•••</button></div>
           </div>
           <div className="breadcrumbs">
             <span>atlas-api</span><b>›</b>
-            {reactionOpen ? <><span>games</span><b>›</b><FileIcon kind="ts" /><span>{reactionGame.name}</span><b>›</b><span className="crumb-symbol">◇</span><span>runClickBenchmark</span></> : memoryOpen && !memoryHidden ? <><span>games</span><b>›</b><FileIcon kind="ts" /><span>{editorGame.name}</span><b>›</b><span className="crumb-symbol">◇</span><span>runReferenceSuite</span></> : <><span>src</span><b>›</b><span>middleware</span><b>›</b><FileIcon kind="ts" /><span>{activeFile}</span><b>›</b><span className="crumb-symbol">◇</span><span>createServer</span></>}
+            {reactionOpen && !reactionHidden ? <><span>games</span><b>›</b><FileIcon kind="ts" /><span>{reactionGame.name}</span><b>›</b><span className="crumb-symbol">◇</span><span>runClickBenchmark</span></> : memoryOpen && !memoryHidden ? <><span>games</span><b>›</b><FileIcon kind="ts" /><span>{editorGame.name}</span><b>›</b><span className="crumb-symbol">◇</span><span>runReferenceSuite</span></> : <><span>src</span><b>›</b><span>middleware</span><b>›</b><FileIcon kind="ts" /><span>{activeFile}</span><b>›</b><span className="crumb-symbol">◇</span><span>createServer</span></>}
           </div>
 
           <div className="editor-and-terminal" ref={editorTerminalRef}>
             {memoryOpen && <MemoryGame onExit={closeMemoryGame} hidden={memoryHidden} onHiddenChange={hideMemoryGame} />}
-            {reactionOpen && <ReactionGame onExit={closeReactionGame} />}
-            {(!memoryOpen || memoryHidden) && !reactionOpen && <div className="editor-wrap" aria-label={`${activeFile} code editor`}>
+            {reactionOpen && <ReactionGame onExit={closeReactionGame} hidden={reactionHidden} onHiddenChange={hideReactionGame} />}
+            {(!memoryOpen || memoryHidden) && (!reactionOpen || reactionHidden) && <div className="editor-wrap" aria-label={`${activeFile} code editor`}>
               <div className="code-lines">
                 {lines.map((line, index) => (
                   <div className="code-line" key={index}>
