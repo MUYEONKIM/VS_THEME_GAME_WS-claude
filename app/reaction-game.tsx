@@ -315,9 +315,19 @@ export function ReactionGame({
     };
   }, []);
 
+  // Photos arrive with no height until they decode, so the list is nudged
+  // again once each one loads.
+  const scrollChatToBottom = useCallback(() => {
+    const list = chatListRef.current;
+    if (list) list.scrollTop = list.scrollHeight;
+  }, []);
+
   useEffect(() => {
-    if (chatListRef.current) chatListRef.current.scrollTop = chatListRef.current.scrollHeight;
-  }, [room?.messages.length]);
+    scrollChatToBottom();
+    // Keyed on the newest message rather than the count: the server caps the
+    // log at 80 and drops the oldest, so the count stops changing after that
+    // and the chat would quietly stop following along.
+  }, [scrollChatToBottom, room?.messages[room.messages.length - 1]?.id]);
 
   const sendChat = () => {
     if (!room) return;
@@ -578,7 +588,7 @@ export function ReactionGame({
                 <article key={message.id} className={message.playerIndex === room.playerIndex ? "mine" : ""}>
                   <div><b>{message.name}</b><time>{new Date(message.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</time></div>
                   {message.image
-                    ? <img className="chat-photo" src={message.image} alt="보낸 사진" loading="lazy" draggable={false} />
+                    ? <img className="chat-photo" src={message.image} alt="보낸 사진" loading="lazy" draggable={false} onLoad={scrollChatToBottom} />
                     : <span>{message.text}</span>}
                 </article>
               ))}
