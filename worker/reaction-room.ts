@@ -68,9 +68,10 @@ type Room = {
 
 const ROOM_LIFETIME = 2 * 60 * 60 * 1000;
 const LEAD_IN = 3_000;
-const FIRST_SPAWN = 500;
-const MIN_GAP = 420;
-const GAP_SPREAD = 620;
+const FIRST_SPAWN = 400;
+/** Tighter than a circle's lifetime, so several are on screen at once. */
+const MIN_GAP = 230;
+const GAP_SPREAD = 330;
 const TAIL_MARGIN = 900;
 /** How long each kind stays clickable. */
 const LIFETIME: Record<TargetKind, number> = { normal: 1150, golden: 950, trap: 1350 };
@@ -118,14 +119,16 @@ async function buildSchedule(startAt: number, durationMs: number) {
 
   while (offset < durationMs - TAIL_MARGIN) {
     const kind = rollKind();
-    const previous = targets[targets.length - 1];
+    const showAt = startAt + offset;
+    // Several circles now overlap in time, so keep clear of every one that is
+    // still on screen rather than just the previous.
+    const concurrent = targets.filter((candidate) => candidate.hideAt > showAt);
     let x = 0;
     let y = 0;
-    // A couple of tries is enough to stop circles landing on top of each other.
-    for (let attempt = 0; attempt < 4; attempt += 1) {
+    for (let attempt = 0; attempt < 8; attempt += 1) {
       x = 8 + Math.random() * 84;
       y = 10 + Math.random() * 78;
-      if (!previous || Math.hypot(previous.x - x, previous.y - y) > 22) break;
+      if (concurrent.every((other) => Math.hypot(other.x - x, other.y - y) > 17)) break;
     }
 
     targets.push({
@@ -134,8 +137,8 @@ async function buildSchedule(startAt: number, durationMs: number) {
       kind,
       x: Math.round(x * 10) / 10,
       y: Math.round(y * 10) / 10,
-      showAt: startAt + offset,
-      hideAt: startAt + offset + LIFETIME[kind],
+      showAt,
+      hideAt: showAt + LIFETIME[kind],
     });
 
     offset += MIN_GAP + Math.random() * GAP_SPREAD;
