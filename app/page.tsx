@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { gameCatalog, type GameId, type TerminalGameView, useTerminalGames } from "./terminal-games";
 import { MemoryGame } from "./memory-game";
+import { ReactionGame } from "./reaction-game";
 
 type ExplorerFile = {
   name: string;
@@ -31,6 +32,12 @@ const editorGame = {
   id: "memory",
   name: "asset-cache.test.ts",
   hint: "Picture reference test · editor",
+};
+
+const reactionGame = {
+  id: "reaction",
+  name: "latency-probe.bench.ts",
+  hint: "Click latency benchmark · editor",
 };
 
 const sourceByFile: Record<string, string> = {
@@ -202,6 +209,7 @@ export default function Home() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [memoryOpen, setMemoryOpen] = useState(false);
   const [memoryHidden, setMemoryHidden] = useState(false);
+  const [reactionOpen, setReactionOpen] = useState(false);
   const { activeGame, gameView, launchGame: startGame, closeGame, restartGame, handleGameKey, handleGameKeyUp } = useTerminalGames();
   const [terminalHistory, setTerminalHistory] = useState<string[]>([
     "PS C:\\Users\\dev\\atlas-api> npm run dev",
@@ -268,8 +276,10 @@ export default function Home() {
 
   const openFile = (name: string) => {
     if (!sourceByFile[name]) return;
-    if (memoryOpen) {
+    if (memoryOpen || reactionOpen) {
       setMemoryOpen(false);
+      setMemoryHidden(false);
+      setReactionOpen(false);
       setTerminalOpen(terminalWasOpenRef.current);
     }
     setActiveFile(name);
@@ -292,8 +302,24 @@ export default function Home() {
     if (memoryOpen) return;
     terminalWasOpenRef.current = terminalOpen;
     closeGame();
+    setReactionOpen(false);
     setMemoryOpen(true);
     setTerminalOpen(false);
+  };
+
+  const launchReactionGame = () => {
+    if (reactionOpen) return;
+    terminalWasOpenRef.current = terminalOpen;
+    closeGame();
+    setMemoryOpen(false);
+    setMemoryHidden(false);
+    setReactionOpen(true);
+    setTerminalOpen(false);
+  };
+
+  const closeReactionGame = () => {
+    setReactionOpen(false);
+    setTerminalOpen(terminalWasOpenRef.current);
   };
 
   const closeMemoryGame = () => {
@@ -392,6 +418,11 @@ export default function Home() {
                   <span className="tree-gap" /><FileIcon kind="game" /><span>{editorGame.name}</span><em className="game-main">EDITOR</em><span className="play-indicator">▷</span>
                 </button>
               )}
+              {gamesOpen && (
+                <button className={`tree-row game-file ${reactionOpen ? "selected" : ""}`} onClick={launchReactionGame} title={reactionGame.hint}>
+                  <span className="tree-gap" /><FileIcon kind="game" /><span>{reactionGame.name}</span><em className="game-main">EDITOR</em><span className="play-indicator">▷</span>
+                </button>
+              )}
               {gamesOpen && gameCatalog.map((game) => (
                 <button key={game.id} className={`tree-row game-file ${activeGame === game.id ? "selected" : ""}`} onClick={() => launchGame(game.id, game.name)} title={game.hint}>
                   <span className="tree-gap" /><FileIcon kind="game" /><span>{game.name}</span>{game.primary && <em className="game-main">MAIN</em>}<span className="play-indicator">▷</span>
@@ -405,17 +436,18 @@ export default function Home() {
 
         <section className="main-pane">
           <div className="editor-tabs">
-            <button className="tab active"><FileIcon kind="ts" /><span>{memoryOpen && !memoryHidden ? editorGame.name : activeFile}</span><span className="tab-dot">●</span></button>
+            <button className="tab active"><FileIcon kind="ts" /><span>{reactionOpen ? reactionGame.name : memoryOpen && !memoryHidden ? editorGame.name : activeFile}</span><span className="tab-dot">●</span></button>
             <div className="editor-actions"><button title="Split Editor">▯</button><button title="More Actions">•••</button></div>
           </div>
           <div className="breadcrumbs">
             <span>atlas-api</span><b>›</b>
-            {memoryOpen && !memoryHidden ? <><span>games</span><b>›</b><FileIcon kind="ts" /><span>{editorGame.name}</span><b>›</b><span className="crumb-symbol">◇</span><span>runReferenceSuite</span></> : <><span>src</span><b>›</b><span>middleware</span><b>›</b><FileIcon kind="ts" /><span>{activeFile}</span><b>›</b><span className="crumb-symbol">◇</span><span>createServer</span></>}
+            {reactionOpen ? <><span>games</span><b>›</b><FileIcon kind="ts" /><span>{reactionGame.name}</span><b>›</b><span className="crumb-symbol">◇</span><span>runClickBenchmark</span></> : memoryOpen && !memoryHidden ? <><span>games</span><b>›</b><FileIcon kind="ts" /><span>{editorGame.name}</span><b>›</b><span className="crumb-symbol">◇</span><span>runReferenceSuite</span></> : <><span>src</span><b>›</b><span>middleware</span><b>›</b><FileIcon kind="ts" /><span>{activeFile}</span><b>›</b><span className="crumb-symbol">◇</span><span>createServer</span></>}
           </div>
 
           <div className="editor-and-terminal" ref={editorTerminalRef}>
             {memoryOpen && <MemoryGame onExit={closeMemoryGame} hidden={memoryHidden} onHiddenChange={hideMemoryGame} />}
-            {(!memoryOpen || memoryHidden) && <div className="editor-wrap" aria-label={`${activeFile} code editor`}>
+            {reactionOpen && <ReactionGame onExit={closeReactionGame} />}
+            {(!memoryOpen || memoryHidden) && !reactionOpen && <div className="editor-wrap" aria-label={`${activeFile} code editor`}>
               <div className="code-lines">
                 {lines.map((line, index) => (
                   <div className="code-line" key={index}>
