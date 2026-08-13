@@ -24,8 +24,11 @@ type ReactionRoom = {
   scores: [number, number];
   targets: Target[];
   taken: Record<string, 0 | 1>;
+  messages: Array<{ id: string; playerIndex: 0 | 1; name: string; text: string; image?: string; at: number }>;
   startedAt: number | null;
   endsAt: number | null;
+  pausedBy: 0 | 1 | null;
+  pausedByName: string;
   running: boolean;
   completed: boolean;
   waiting: boolean;
@@ -54,7 +57,15 @@ function createPlayerId() {
   return `rx-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
 }
 
-export function ReactionGame({ onExit }: { onExit: () => void }) {
+export function ReactionGame({
+  onExit,
+  hidden = false,
+  onHiddenChange,
+}: {
+  onExit: () => void;
+  hidden?: boolean;
+  onHiddenChange?: (hidden: boolean) => void;
+}) {
   const [account, setAccount] = useState<Account | null>(null);
   const [sessionToken, setSessionToken] = useState("");
   const [playAsGuest, setPlayAsGuest] = useState(false);
@@ -72,6 +83,11 @@ export function ReactionGame({ onExit }: { onExit: () => void }) {
   const [now, setNow] = useState(() => Date.now());
   const [pop, setPop] = useState<{ id: string; kind: TargetKind; seat: 0 | 1 } | null>(null);
   const [penalty, setPenalty] = useState(false);
+  const [chatInput, setChatInput] = useState("");
+  const [chatPickerOpen, setChatPickerOpen] = useState(false);
+  const [chatImagePending, setChatImagePending] = useState("");
+  const [imagePool, setImagePool] = useState<string[]>([]);
+  const [resumeAsking, setResumeAsking] = useState(false);
 
   const socket = useRef<WebSocket | null>(null);
   const intent = useRef({ code: "", name: "", token: "", duration: 30_000 });
@@ -82,6 +98,7 @@ export function ReactionGame({ onExit }: { onExit: () => void }) {
   const clockOffset = useRef(0);
   const popTimer = useRef<number | null>(null);
   const penaltyTimer = useRef<number | null>(null);
+  const chatListRef = useRef<HTMLDivElement>(null);
 
   const getPlayerId = useCallback(() => {
     if (playerId.current) return playerId.current;
@@ -276,11 +293,74 @@ export function ReactionGame({ onExit }: { onExit: () => void }) {
   };
 
   const visibleTargets = useMemo(() => {
-    if (!room?.running || room.startedAt === null) return [];
+    if (!room?.running || room.startedAt === null || room.pausedBy !== null) return [];
     return room.targets.filter(
       (target) => now >= target.showAt && now <= target.hideAt && room.taken[target.id] === undefined,
     );
   }, [now, room]);
+
+  // The circles use the same photo pool as the matching game.
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/memory-images", { cache: "no-store" })
+      .then((response) => response.json())
+      .then((data) => {
+        if (!cancelled && Array.isArray(data.images)) setImagePool(data.images);
+      })
+      .catch(() => {
+        // Sending photos is simply unavailable until this succeeds.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (chatListRef.current) chatListRef.current.scrollTop = chatListRef.current.scrollHeight;
+  }, [room?.messages.length]);
+
+  const sendChat = () => {
+    if (!room) return;
+    if (chatImagePending) {
+      if (send({ type: "chat", image: chatImagePending })) setChatImagePending("");
+      return;
+    }
+    const text = chatInput.trim();
+    if (!text) return;
+    if (send({ type: "chat", text })) setChatInput("");
+  };
+
+  // Esc drops back to the editor without closing the socket, so the opponent
+  // sees a pause instead of a dropout. The clock freezes while away.
+  const escapeGame = useCallback(() => {
+    if (hidden) {
+      onHiddenChange?.(false);
+      setResumeAsking(true);
+      return;
+    }
+    if (socket.current?.readyState === WebSocket.OPEN) send({ type: "pause" });
+    setChatPickerOpen(false);
+    setChatImagePending("");
+    setResumeAsking(false);
+    onHiddenChange?.(true);
+  }, [hidden, onHiddenChange, send]);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      const target = event.target as HTMLElement | null;
+      if (target && /^(INPUT|TEXTAREA)$/.test(target.tagName)) return;
+      event.preventDefault();
+      escapeGame();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [escapeGame]);
+
+  const resumeGame = () => {
+    if (socket.current?.readyState === WebSocket.OPEN) send({ type: "resume" });
+    setResumeAsking(false);
+  };
 
   const flashPenalty = useCallback(() => {
     setPenalty(true);
@@ -289,7 +369,7 @@ export function ReactionGame({ onExit }: { onExit: () => void }) {
   }, []);
 
   const hitTarget = (target: Target) => {
-    if (!room || !room.running) return;
+    if (!room || !room.running || room.pausedBy !== null) return;
     send({ type: "hit", id: target.id });
     setPop({ id: target.id, kind: target.kind, seat: room.playerIndex as 0 | 1 });
     if (popTimer.current !== null) window.clearTimeout(popTimer.current);
@@ -299,7 +379,7 @@ export function ReactionGame({ onExit }: { onExit: () => void }) {
 
   // Clicking anywhere that is not a circle costs a point.
   const missArena = () => {
-    if (!room?.running || room.completed) return;
+    if (!room?.running || room.completed || room.pausedBy !== null) return;
     if (room.startedAt !== null && now < room.startedAt) return;
     send({ type: "miss" });
     setPop({ id: "miss", kind: "trap", seat: room.playerIndex as 0 | 1 });
@@ -319,7 +399,7 @@ export function ReactionGame({ onExit }: { onExit: () => void }) {
   const winner = room ? (room.scores[0] === room.scores[1] ? -1 : room.scores[0] > room.scores[1] ? 0 : 1) : -1;
 
   return (
-    <section className="reaction-game" aria-label="Reaction click battle">
+    <section className={`reaction-game ${hidden ? "is-hidden" : ""}`} aria-label="Reaction click battle" aria-hidden={hidden}>
       <header className="memory-toolbar">
         <div className="memory-heading">
           <strong>latency-probe.bench.ts</strong>
@@ -440,7 +520,7 @@ export function ReactionGame({ onExit }: { onExit: () => void }) {
           </div>
         </div>
       ) : (
-        <div className="reaction-arena-wrap">
+        <div className="reaction-arena-wrap has-chat">
           <div className={`reaction-arena ${penalty ? "penalised" : ""}`} aria-label="클릭 영역" onPointerDown={missArena}>
             {visibleTargets.map((target) => {
               const life = (now - target.showAt) / (target.hideAt - target.showAt);
@@ -488,6 +568,83 @@ export function ReactionGame({ onExit }: { onExit: () => void }) {
                 </div>
               </div>
             )}
+          </div>
+
+          <aside className="memory-chat" aria-label="대전 채팅">
+            <header><strong>LIVE CHAT</strong><span>{room.messages.length}</span></header>
+            <div className="memory-chat-list" ref={chatListRef}>
+              {room.messages.length === 0 && <p>상대방에게 메시지를 보내보세요.</p>}
+              {room.messages.map((message) => (
+                <article key={message.id} className={message.playerIndex === room.playerIndex ? "mine" : ""}>
+                  <div><b>{message.name}</b><time>{new Date(message.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</time></div>
+                  {message.image
+                    ? <img className="chat-photo" src={message.image} alt="보낸 사진" loading="lazy" draggable={false} />
+                    : <span>{message.text}</span>}
+                </article>
+              ))}
+            </div>
+            {chatPickerOpen && (
+              <div className="chat-photo-picker">
+                <header>
+                  <span>사진 보내기</span>
+                  <button type="button" onClick={() => { setChatImagePending(""); setChatPickerOpen(false); }} aria-label="사진 선택 닫기">×</button>
+                </header>
+                <div className="chat-photo-grid">
+                  {imagePool.map((image) => (
+                    <button key={image} type="button" onClick={() => { setChatImagePending(image); setChatPickerOpen(false); }} title="이 사진 고르기">
+                      <img src={image} alt="" loading="lazy" draggable={false} />
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+            {chatImagePending && (
+              <div className="chat-staged-photo">
+                <img src={chatImagePending} alt="보낼 사진" draggable={false} />
+                <button type="button" onClick={() => setChatImagePending("")} aria-label="선택한 사진 취소">×</button>
+              </div>
+            )}
+            <form onSubmit={(event) => { event.preventDefault(); sendChat(); }}>
+              <button
+                type="button"
+                className={`chat-photo-toggle ${chatPickerOpen ? "active" : ""}`}
+                onClick={() => { setChatImagePending(""); setChatPickerOpen((open) => !open); }}
+                aria-expanded={chatPickerOpen}
+                title="사진 보내기"
+              >
+                🖼
+              </button>
+              <input
+                value={chatInput}
+                maxLength={160}
+                placeholder={chatImagePending ? "Send를 누르면 사진이 전송됩니다" : "메시지를 입력하세요"}
+                onChange={(event) => setChatInput(event.target.value)}
+              />
+              <button type="submit" disabled={!chatInput.trim() && !chatImagePending}>Send</button>
+            </form>
+          </aside>
+        </div>
+      )}
+
+      {room && room.pausedBy !== null && room.pausedBy !== room.playerIndex && (
+        <div className="memory-pause-overlay" role="dialog" aria-modal="true" aria-label="일시중지">
+          <div>
+            <span className="pause-bars" aria-hidden="true"><i /><i /></span>
+            <strong>일시중지중입니다</strong>
+            <p>{room.pausedByName || "상대방"}님이 잠시 자리를 비웠습니다. 남은 시간은 멈춰 있습니다.</p>
+          </div>
+        </div>
+      )}
+
+      {resumeAsking && (
+        <div className="memory-pause-overlay" role="dialog" aria-modal="true" aria-label="게임 재개 확인">
+          <div>
+            <strong>게임을 다시 재개하시겠습니까?</strong>
+            <p>Esc를 누르면 언제든 다시 편집기 화면으로 빠져나갈 수 있습니다.</p>
+            <div className="pause-actions">
+              <button type="button" onClick={() => { setResumeAsking(false); onHiddenChange?.(true); }}>No</button>
+              <button type="button" className="primary" onClick={resumeGame}>Yes</button>
+            </div>
           </div>
         </div>
       )}
