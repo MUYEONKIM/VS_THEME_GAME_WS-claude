@@ -20,7 +20,7 @@ export type OpponentRow = PlayerRecord & {
 
 export type FinishedMatch = {
   /** Which of the two head-to-head games produced this result. */
-  game?: "memory" | "reaction";
+  game?: "memory" | "reaction" | "sort";
   roomCode: string;
   playerA: string;
   playerB: string;
