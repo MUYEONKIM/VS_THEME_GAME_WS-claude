@@ -3,12 +3,14 @@ import { handleImageOptimization, DEFAULT_DEVICE_SIZES, DEFAULT_IMAGE_SIZES } fr
 import handler from "vinext/server/app-router-entry";
 import { CLOSE_BAD_REQUEST, CLOSE_NO_CAPACITY, MemoryRoom, rejectSocket } from "./memory-room";
 import { ReactionRoom } from "./reaction-room";
+import { SortRoom } from "./sort-room";
 
 interface Env {
   ASSETS: Fetcher;
   MEMORY_IMAGES: KVNamespace;
   MEMORY_ROOM: DurableObjectNamespace;
   REACTION_ROOM: DurableObjectNamespace;
+  SORT_ROOM: DurableObjectNamespace;
   IMAGES: {
     input(stream: ReadableStream): {
       transform(options: Record<string, unknown>): {
@@ -91,6 +93,13 @@ const worker = {
       });
     }
 
+    if (url.pathname === "/api/sort/ws") {
+      return routeGameRoom(request, url, env.SORT_ROOM, {
+        duration: url.searchParams.get("duration") ?? "30000",
+        difficulty: url.searchParams.get("difficulty") ?? "easy",
+      });
+    }
+
     if (url.pathname === "/_vinext/image") {
       const allowedWidths = [...DEFAULT_DEVICE_SIZES, ...DEFAULT_IMAGE_SIZES];
       return handleImageOptimization(request, {
@@ -106,5 +115,5 @@ const worker = {
   },
 };
 
-export { MemoryRoom, ReactionRoom };
+export { MemoryRoom, ReactionRoom, SortRoom };
 export default worker;
