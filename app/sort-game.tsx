@@ -4,6 +4,7 @@ import { type FormEvent, useCallback, useEffect, useRef, useState } from "react"
 import {
   buildSortRound,
   normalizeSortDifficulty,
+  queueAt,
   SORT_DIFFICULTIES,
   SORT_DURATIONS,
   SORT_LEAD_IN,
@@ -400,7 +401,7 @@ export function SortGame({
 
   const answer = (direction: "left" | "right") => {
     if (!round || !roundLive) return;
-    const image = round.queue[myIndex];
+    const image = queueAt(round, myIndex);
     if (!image) return;
     const correct = sideFor(round, image) === direction;
     flashResult(correct);
@@ -500,7 +501,10 @@ export function SortGame({
   const accuracy = solo && solo.hits + solo.misses > 0 ? Math.round((solo.hits / (solo.hits + solo.misses)) * 100) : 0;
   const winner = room ? (room.scores[0] === room.scores[1] ? -1 : room.scores[0] > room.scores[1] ? 0 : 1) : -1;
 
-  const lane = round ? round.queue.slice(myIndex, myIndex + LANE_PREVIEW) : [];
+  // Read as a ring so the lane never empties out mid-round.
+  const lane = round
+    ? Array.from({ length: LANE_PREVIEW }, (_, offset) => queueAt(round, myIndex + offset))
+    : [];
 
   const arena = (
     <div className={`sort-arena ${flash ? `flash-${flash}` : ""}`}>
@@ -525,7 +529,7 @@ export function SortGame({
             </figure>
           );
         })}
-        {lane.length === 0 && roundLive && <p className="sort-lane-empty">대기 중…</p>}
+        {lane.every((image) => !image) && roundLive && <p className="sort-lane-empty">대기 중…</p>}
 
         {flying.map((entry) => (
           <div key={entry.key} className={`sort-flying ${entry.dir}`} aria-hidden="true">
