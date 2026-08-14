@@ -504,6 +504,11 @@ export function SortGame({
 
   const arena = (
     <div className={`sort-arena ${flash ? `flash-${flash}` : ""}`}>
+      <div className="sort-score-badge" aria-label="내 점수">
+        <small>{gameMode === "solo" ? "SCORE" : (account?.nickname ?? nickname.trim() ?? "ME")}</small>
+        <b key={myScore}>{myScore}</b>
+      </div>
+
       <div className="sort-side left" aria-label="왼쪽으로 보낼 캐릭터">
         <span className="sort-key" aria-hidden="true">←</span>
         {round?.left.map((image, index) => (
