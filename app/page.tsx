@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as
 import { gameCatalog, type GameId, type TerminalGameView, useTerminalGames } from "./terminal-games";
 import { MemoryGame } from "./memory-game";
 import { ReactionGame } from "./reaction-game";
+import { SortGame } from "./sort-game";
 
 type ExplorerFile = {
   name: string;
@@ -38,6 +39,12 @@ const reactionGame = {
   id: "reaction",
   name: "latency-probe.bench.ts",
   hint: "Click latency benchmark · editor",
+};
+
+const sortGame = {
+  id: "sort",
+  name: "router-split.spec.ts",
+  hint: "Route splitting spec · editor",
 };
 
 const sourceByFile: Record<string, string> = {
@@ -211,6 +218,8 @@ export default function Home() {
   const [memoryHidden, setMemoryHidden] = useState(false);
   const [reactionOpen, setReactionOpen] = useState(false);
   const [reactionHidden, setReactionHidden] = useState(false);
+  const [sortOpen, setSortOpen] = useState(false);
+  const [sortHidden, setSortHidden] = useState(false);
   const { activeGame, gameView, launchGame: startGame, closeGame, restartGame, handleGameKey, handleGameKeyUp } = useTerminalGames();
   const [terminalHistory, setTerminalHistory] = useState<string[]>([
     "PS C:\\Users\\dev\\atlas-api> npm run dev",
@@ -277,11 +286,13 @@ export default function Home() {
 
   const openFile = (name: string) => {
     if (!sourceByFile[name]) return;
-    if (memoryOpen || reactionOpen) {
+    if (memoryOpen || reactionOpen || sortOpen) {
       setMemoryOpen(false);
       setMemoryHidden(false);
       setReactionOpen(false);
       setReactionHidden(false);
+      setSortOpen(false);
+      setSortHidden(false);
       setTerminalOpen(terminalWasOpenRef.current);
     }
     setActiveFile(name);
@@ -315,6 +326,8 @@ export default function Home() {
     closeGame();
     setMemoryOpen(false);
     setMemoryHidden(false);
+    setSortOpen(false);
+    setSortHidden(false);
     setReactionOpen(true);
     setTerminalOpen(false);
   };
@@ -327,6 +340,29 @@ export default function Home() {
 
   const hideReactionGame = (hidden: boolean) => {
     setReactionHidden(hidden);
+    setTerminalOpen(hidden ? terminalWasOpenRef.current : false);
+  };
+
+  const launchSortGame = () => {
+    if (sortOpen) return;
+    terminalWasOpenRef.current = terminalOpen;
+    closeGame();
+    setMemoryOpen(false);
+    setMemoryHidden(false);
+    setReactionOpen(false);
+    setReactionHidden(false);
+    setSortOpen(true);
+    setTerminalOpen(false);
+  };
+
+  const closeSortGame = () => {
+    setSortOpen(false);
+    setSortHidden(false);
+    setTerminalOpen(terminalWasOpenRef.current);
+  };
+
+  const hideSortGame = (hidden: boolean) => {
+    setSortHidden(hidden);
     setTerminalOpen(hidden ? terminalWasOpenRef.current : false);
   };
 
@@ -431,6 +467,11 @@ export default function Home() {
                   <span className="tree-gap" /><FileIcon kind="game" /><span>{reactionGame.name}</span><em className="game-main">EDITOR</em><span className="play-indicator">▷</span>
                 </button>
               )}
+              {gamesOpen && (
+                <button className={`tree-row game-file ${sortOpen ? "selected" : ""}`} onClick={launchSortGame} title={sortGame.hint}>
+                  <span className="tree-gap" /><FileIcon kind="game" /><span>{sortGame.name}</span><em className="game-main">EDITOR</em><span className="play-indicator">▷</span>
+                </button>
+              )}
               {gamesOpen && gameCatalog.map((game) => (
                 <button key={game.id} className={`tree-row game-file ${activeGame === game.id ? "selected" : ""}`} onClick={() => launchGame(game.id, game.name)} title={game.hint}>
                   <span className="tree-gap" /><FileIcon kind="game" /><span>{game.name}</span>{game.primary && <em className="game-main">MAIN</em>}<span className="play-indicator">▷</span>
@@ -444,18 +485,19 @@ export default function Home() {
 
         <section className="main-pane">
           <div className="editor-tabs">
-            <button className="tab active"><FileIcon kind="ts" /><span>{reactionOpen && !reactionHidden ? reactionGame.name : memoryOpen && !memoryHidden ? editorGame.name : activeFile}</span><span className="tab-dot">●</span></button>
+            <button className="tab active"><FileIcon kind="ts" /><span>{sortOpen && !sortHidden ? sortGame.name : reactionOpen && !reactionHidden ? reactionGame.name : memoryOpen && !memoryHidden ? editorGame.name : activeFile}</span><span className="tab-dot">●</span></button>
             <div className="editor-actions"><button title="Split Editor">▯</button><button title="More Actions">•••</button></div>
           </div>
           <div className="breadcrumbs">
             <span>atlas-api</span><b>›</b>
-            {reactionOpen && !reactionHidden ? <><span>games</span><b>›</b><FileIcon kind="ts" /><span>{reactionGame.name}</span><b>›</b><span className="crumb-symbol">◇</span><span>runClickBenchmark</span></> : memoryOpen && !memoryHidden ? <><span>games</span><b>›</b><FileIcon kind="ts" /><span>{editorGame.name}</span><b>›</b><span className="crumb-symbol">◇</span><span>runReferenceSuite</span></> : <><span>src</span><b>›</b><span>middleware</span><b>›</b><FileIcon kind="ts" /><span>{activeFile}</span><b>›</b><span className="crumb-symbol">◇</span><span>createServer</span></>}
+            {sortOpen && !sortHidden ? <><span>games</span><b>›</b><FileIcon kind="ts" /><span>{sortGame.name}</span><b>›</b><span className="crumb-symbol">◇</span><span>splitByRoute</span></> : reactionOpen && !reactionHidden ? <><span>games</span><b>›</b><FileIcon kind="ts" /><span>{reactionGame.name}</span><b>›</b><span className="crumb-symbol">◇</span><span>runClickBenchmark</span></> : memoryOpen && !memoryHidden ? <><span>games</span><b>›</b><FileIcon kind="ts" /><span>{editorGame.name}</span><b>›</b><span className="crumb-symbol">◇</span><span>runReferenceSuite</span></> : <><span>src</span><b>›</b><span>middleware</span><b>›</b><FileIcon kind="ts" /><span>{activeFile}</span><b>›</b><span className="crumb-symbol">◇</span><span>createServer</span></>}
           </div>
 
           <div className="editor-and-terminal" ref={editorTerminalRef}>
             {memoryOpen && <MemoryGame onExit={closeMemoryGame} hidden={memoryHidden} onHiddenChange={hideMemoryGame} />}
             {reactionOpen && <ReactionGame onExit={closeReactionGame} hidden={reactionHidden} onHiddenChange={hideReactionGame} />}
-            {(!memoryOpen || memoryHidden) && (!reactionOpen || reactionHidden) && <div className="editor-wrap" aria-label={`${activeFile} code editor`}>
+            {sortOpen && <SortGame onExit={closeSortGame} hidden={sortHidden} onHiddenChange={hideSortGame} />}
+            {(!memoryOpen || memoryHidden) && (!reactionOpen || reactionHidden) && (!sortOpen || sortHidden) && <div className="editor-wrap" aria-label={`${activeFile} code editor`}>
               <div className="code-lines">
                 {lines.map((line, index) => (
                   <div className="code-line" key={index}>
