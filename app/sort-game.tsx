@@ -549,9 +549,9 @@ export function SortGame({
       </div>
 
       <div className="sort-timer-row">
-        <div className="sort-timer" aria-label="남은 시간">
+        <div className={`sort-timer ${secondsLeft !== null && secondsLeft <= 5 ? "urgent" : ""}`} role="timer" aria-label="남은 시간">
           <i style={{ transform: `scaleX(${timeRatio})` }} />
-          <span>{secondsLeft === null ? `${duration / 1000}s` : `${secondsLeft}`}</span>
+          <span>{secondsLeft === null ? duration / 1000 : secondsLeft}초</span>
         </div>
       </div>
     </div>
