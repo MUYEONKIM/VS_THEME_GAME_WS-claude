@@ -101,6 +101,9 @@ export function SortGame({
   const [connecting, setConnecting] = useState(false);
   const [now, setNow] = useState(() => Date.now());
   const [flash, setFlash] = useState<"correct" | "wrong" | null>(null);
+  /** Characters currently flying off toward the side they were sent to. */
+  const [flying, setFlying] = useState<Array<{ key: string; image: string; dir: "left" | "right" }>>([]);
+  const [scoreEffect, setScoreEffect] = useState(0);
   const [bestScores, setBestScores] = useState<Record<string, number>>({});
   const [imagePool, setImagePool] = useState<string[]>([]);
 
@@ -402,6 +405,17 @@ export function SortGame({
     const correct = sideFor(round, image) === direction;
     flashResult(correct);
 
+    // The character leaves toward whichever side it was sent, right or wrong.
+    const key = `${myIndex}-${Math.random().toString(36).slice(2, 7)}`;
+    setFlying((current) => [...current, { key, image, dir: direction }]);
+    window.setTimeout(() => setFlying((current) => current.filter((entry) => entry.key !== key)), 480);
+
+    if (correct) {
+      const token = Date.now();
+      setScoreEffect(token);
+      window.setTimeout(() => setScoreEffect((current) => (current === token ? 0 : current)), 620);
+    }
+
     if (solo) {
       setSolo((current) => (current ? {
         ...current,
@@ -491,6 +505,7 @@ export function SortGame({
   const arena = (
     <div className={`sort-arena ${flash ? `flash-${flash}` : ""}`}>
       <div className="sort-side left" aria-label="왼쪽으로 보낼 캐릭터">
+        <span className="sort-key" aria-hidden="true">←</span>
         {round?.left.map((image, index) => (
           <figure key={`${image}-${index}`}><img src={image} alt="" draggable={false} /></figure>
         ))}
@@ -507,24 +522,37 @@ export function SortGame({
         })}
         {lane.length === 0 && roundLive && <p className="sort-lane-empty">대기 중…</p>}
 
+        {flying.map((entry) => (
+          <div key={entry.key} className={`sort-flying ${entry.dir}`} aria-hidden="true">
+            <img src={entry.image} alt="" draggable={false} />
+          </div>
+        ))}
+
         {countdown !== null && (
           <div className="reaction-countdown" role="status"><b>{countdown}</b><small>READY</small></div>
         )}
       </div>
 
       <div className="sort-side right" aria-label="오른쪽으로 보낼 캐릭터">
+        <span className="sort-key" aria-hidden="true">→</span>
         {round?.right.map((image, index) => (
           <figure key={`${image}-${index}`}><img src={image} alt="" draggable={false} /></figure>
         ))}
       </div>
 
+      {scoreEffect > 0 && <div key={scoreEffect} className="sort-score-effect" aria-hidden="true">Score!</div>}
+      {flash === "wrong" && <div className="sort-warning" role="status" aria-live="assertive"><span>−1</span></div>}
+
       <div className="sort-controls">
         <button type="button" className="sort-arrow" onClick={() => answer("left")} disabled={!roundLive} aria-label="왼쪽으로 보내기">←</button>
+        <button type="button" className="sort-arrow" onClick={() => answer("right")} disabled={!roundLive} aria-label="오른쪽으로 보내기">→</button>
+      </div>
+
+      <div className="sort-timer-row">
         <div className="sort-timer" aria-label="남은 시간">
           <i style={{ transform: `scaleX(${timeRatio})` }} />
           <span>{secondsLeft === null ? `${duration / 1000}s` : `${secondsLeft}`}</span>
         </div>
-        <button type="button" className="sort-arrow" onClick={() => answer("right")} disabled={!roundLive} aria-label="오른쪽으로 보내기">→</button>
       </div>
     </div>
   );
