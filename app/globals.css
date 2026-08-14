@@ -666,7 +666,20 @@ body.resizing-terminal, body.resizing-terminal * { cursor: ns-resize !important;
 .sort-stage { position: relative; flex: 1; min-width: 0; min-height: 0; }
 /* Kept narrow and centred: at full width the two legends drift so far apart
    that the eye has to travel across the whole editor between them. */
-.sort-arena { position: absolute; top: 0; bottom: 0; left: 50%; transform: translateX(-50%); width: min(100%, 640px); display: grid; grid-template-columns: auto minmax(0, 1fr) auto; grid-template-rows: minmax(0, 1fr) auto auto; gap: 6px 14px; padding: 10px; border: 1px solid #2d2d2d; border-radius: 4px; background: radial-gradient(circle at 50% 25%, #232323, #191919 72%); overflow: hidden; }
+.sort-arena { position: absolute; top: 0; bottom: 0; left: 50%; transform: translateX(-50%); width: min(100%, 640px); display: grid; grid-template-columns: auto minmax(0, 1fr) auto; grid-template-rows: auto minmax(0, 1fr) auto auto; gap: 6px 14px; padding: 10px; border: 1px solid #2d2d2d; border-radius: 4px; background: radial-gradient(circle at 50% 25%, #232323, #191919 72%); overflow: hidden; }
+/* The legends stay centred against the whole lane, not just the row below. */
+.sort-arena > .sort-side { grid-row: 1 / 3; }
+.sort-arena > .sort-lane { grid-column: 2; grid-row: 2; }
+
+/* My running score, right above the lane the characters come down. The queue
+   is not clipped — that would cut the fly-away too — so the badge sits on top
+   and the characters rise up behind it. */
+.sort-score-badge { position: relative; z-index: 12; grid-column: 2; grid-row: 1; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 4px 0 2px; }
+.sort-score-badge::before { content: ""; position: absolute; inset: -12px -30px -18px; background: linear-gradient(to bottom, #212121 52%, #21212100); pointer-events: none; }
+.sort-score-badge small, .sort-score-badge b { position: relative; }
+.sort-score-badge small { color: #8b8b8b; font: 9px/1 var(--mono); letter-spacing: 1px; max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sort-score-badge b { color: #f0f0f0; font: 600 clamp(22px, 3.4vw, 32px)/1 var(--mono); text-shadow: 0 2px 10px #000a; animation: sort-score-bump 220ms ease-out; }
+@keyframes sort-score-bump { from { transform: scale(1.3); color: #b5cea8; } to { transform: scale(1); } }
 .sort-arena.flash-correct { box-shadow: inset 0 0 0 2px #4ec94e77, inset 0 0 60px #4ec94e22; }
 .sort-arena.flash-wrong { box-shadow: inset 0 0 0 2px #c05050aa, inset 0 0 90px #c0505044; }
 
