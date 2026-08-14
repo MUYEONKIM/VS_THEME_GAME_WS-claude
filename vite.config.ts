@@ -35,12 +35,14 @@ function bindingConfig(env: Record<string, string>) {
       bindings: [
         { name: "MEMORY_ROOM", class_name: "MemoryRoom" },
         { name: "REACTION_ROOM", class_name: "ReactionRoom" },
+        { name: "SORT_ROOM", class_name: "SortRoom" },
       ],
     },
     // SQLite-backed classes are the ones available on the Workers free plan.
     migrations: [
       { tag: "v1", new_sqlite_classes: ["MemoryRoom"] },
       { tag: "v2", new_sqlite_classes: ["ReactionRoom"] },
+      { tag: "v3", new_sqlite_classes: ["SortRoom"] },
     ],
   };
 }
