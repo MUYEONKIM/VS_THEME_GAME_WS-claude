@@ -664,31 +664,68 @@ body.resizing-terminal, body.resizing-terminal * { cursor: ns-resize !important;
 
 /* Sorting battle: two side legends, a queue lane and two arrow keys. */
 .sort-stage { position: relative; flex: 1; min-width: 0; min-height: 0; }
-.sort-arena { position: absolute; inset: 0; display: grid; grid-template-columns: minmax(84px, 1fr) minmax(0, 1.5fr) minmax(84px, 1fr); grid-template-rows: minmax(0, 1fr) auto; gap: 8px; padding: 10px; border: 1px solid #2d2d2d; border-radius: 4px; background: radial-gradient(circle at 50% 25%, #232323, #191919 72%); overflow: hidden; }
+/* Kept narrow and centred: at full width the two legends drift so far apart
+   that the eye has to travel across the whole editor between them. */
+.sort-arena { position: absolute; top: 0; bottom: 0; left: 50%; transform: translateX(-50%); width: min(100%, 640px); display: grid; grid-template-columns: auto minmax(0, 1fr) auto; grid-template-rows: minmax(0, 1fr) auto auto; gap: 6px 14px; padding: 10px; border: 1px solid #2d2d2d; border-radius: 4px; background: radial-gradient(circle at 50% 25%, #232323, #191919 72%); overflow: hidden; }
 .sort-arena.flash-correct { box-shadow: inset 0 0 0 2px #4ec94e77, inset 0 0 60px #4ec94e22; }
-.sort-arena.flash-wrong { box-shadow: inset 0 0 0 2px #c0505088, inset 0 0 60px #c0505033; }
+.sort-arena.flash-wrong { box-shadow: inset 0 0 0 2px #c05050aa, inset 0 0 90px #c0505044; }
 
-.sort-side { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; }
-.sort-side figure { position: relative; margin: 0; width: clamp(46px, 8vw, 74px); aspect-ratio: 1; border: 3px solid #3f4a5a; border-radius: 50%; background: #141414; overflow: hidden; }
+.sort-side { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; }
+.sort-key { display: grid; place-items: center; width: 34px; height: 26px; border: 1px solid #5a5a5a; border-bottom-width: 3px; border-radius: 5px; background: #2c2c2e; color: #d8d8d8; font: 700 14px/1 var(--mono); }
+.sort-side.left .sort-key { border-color: #4a86c4; color: #9ec8ee; }
+.sort-side.right .sort-key { border-color: #c48a4a; color: #eecb9e; }
+.sort-side figure { position: relative; margin: 0; width: clamp(58px, 9vw, 92px); aspect-ratio: 1; border: 3px solid #3f4a5a; border-radius: 50%; background: #141414; overflow: hidden; }
 .sort-side.left figure { border-color: #4a86c4; }
 .sort-side.right figure { border-color: #c48a4a; }
 .sort-side img { width: 100%; height: 100%; display: block; object-fit: cover; }
 
-.sort-lane { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 4px; padding-bottom: 4px; }
-.sort-lane figure { margin: 0; width: clamp(44px, 7.5vw, 72px); aspect-ratio: 1; border: 3px solid #4a4a4a; border-radius: 50%; background: #141414; overflow: hidden; opacity: calc(1 - var(--depth, 0) * 0.11); transform: scale(calc(1 - var(--depth, 0) * 0.055)); order: calc(0 - var(--depth, 0)); }
-.sort-lane figure.current { border-color: #e0e0e0; box-shadow: 0 0 0 3px #ffffff22, 0 6px 18px #000a; opacity: 1; transform: scale(1.24); margin-top: 6px; }
+/* The queue overlaps rather than sitting in a spaced-out column. */
+.sort-lane { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; padding-bottom: 4px; }
+.sort-lane figure { margin: 0 0 calc(-1 * clamp(20px, 3vw, 34px)); width: clamp(56px, 9vw, 92px); aspect-ratio: 1; border: 3px solid #4a4a4a; border-radius: 50%; background: #141414; overflow: hidden; opacity: calc(1 - var(--depth, 0) * 0.1); transform: scale(calc(1 - var(--depth, 0) * 0.05)); order: calc(0 - var(--depth, 0)); }
+.sort-lane figure.current { margin-bottom: 0; border-color: #f0f0f0; box-shadow: 0 0 0 4px #ffffff26, 0 8px 22px #000b; opacity: 1; transform: scale(1.16); }
 .sort-lane img { width: 100%; height: 100%; display: block; object-fit: cover; }
 .sort-lane-empty { margin: 0; color: #6f6f6f; font: 10px/1 var(--mono); }
 
-.sort-controls { grid-column: 1 / -1; display: flex; align-items: center; gap: 12px; padding: 6px 4px 2px; }
-.sort-arrow { flex: none; width: clamp(56px, 9vw, 84px); height: clamp(40px, 6vw, 54px); border: 2px solid #4b4b4b; border-radius: 8px; background: #2a2a2b; color: #d0d0d0; cursor: pointer; font-size: 22px; line-height: 1; }
+/* Answering throws the character off toward the side it was sent. */
+.sort-flying { position: absolute; left: 50%; bottom: 4px; z-index: 3; width: clamp(56px, 9vw, 92px); aspect-ratio: 1; margin-left: calc(-0.5 * clamp(56px, 9vw, 92px)); border: 3px solid #d8d8d8; border-radius: 50%; overflow: hidden; pointer-events: none; }
+.sort-flying img { width: 100%; height: 100%; display: block; object-fit: cover; }
+.sort-flying.left { animation: sort-fly-left 480ms cubic-bezier(.4, .1, .8, .6) forwards; }
+.sort-flying.right { animation: sort-fly-right 480ms cubic-bezier(.4, .1, .8, .6) forwards; }
+@keyframes sort-fly-left {
+  from { opacity: 1; transform: translate(0, 0) scale(1.16) rotate(0deg); }
+  to { opacity: 0; transform: translate(-260px, 190px) scale(.5) rotate(-160deg); }
+}
+@keyframes sort-fly-right {
+  from { opacity: 1; transform: translate(0, 0) scale(1.16) rotate(0deg); }
+  to { opacity: 0; transform: translate(260px, 190px) scale(.5) rotate(160deg); }
+}
+
+.sort-score-effect { position: absolute; left: 50%; top: 8%; z-index: 6; transform: translateX(-50%); color: #7ec97e; font: 700 clamp(24px, 4vw, 38px)/1 var(--mono); text-shadow: 0 2px 12px #000, 0 0 22px #4ec94e55; white-space: nowrap; pointer-events: none; animation: sort-score-pop 620ms ease-out forwards; }
+@keyframes sort-score-pop {
+  from { opacity: 0; transform: translate(-50%, 14px) scale(.7); }
+  25% { opacity: 1; transform: translate(-50%, 0) scale(1.12); }
+  to { opacity: 0; transform: translate(-50%, -26px) scale(1); }
+}
+
+.sort-warning { position: absolute; inset: 0; z-index: 5; display: grid; place-items: center; background: #c0505026; pointer-events: none; animation: sort-warning-flash 260ms ease-out forwards; }
+.sort-warning span { padding: 6px 16px; border: 1px solid #d45a5a; border-radius: 4px; background: #2b1a1ae0; color: #ffc4c4; font: 700 18px/1 var(--mono); }
+@keyframes sort-warning-flash { from { opacity: 1; } to { opacity: 0; } }
+
+.sort-controls { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 4px 2px 0; }
+.sort-arrow { flex: none; width: clamp(74px, 13vw, 124px); height: clamp(40px, 6vw, 52px); border: 2px solid #4b4b4b; border-bottom-width: 4px; border-radius: 9px; background: #2a2a2b; color: #d0d0d0; cursor: pointer; font-size: 24px; line-height: 1; }
 .sort-arrow:hover:not(:disabled) { border-color: #7a7a7a; background: #343436; color: #ffffff; }
-.sort-arrow:active:not(:disabled) { transform: translateY(1px); }
+.sort-arrow:active:not(:disabled) { border-bottom-width: 2px; transform: translateY(2px); }
 .sort-arrow:disabled { border-color: #3a3a3a; color: #565656; cursor: default; }
 
-.sort-timer { position: relative; flex: 1; height: 16px; border: 1px solid #3a3a3a; border-radius: 8px; background: #1b1b1b; overflow: hidden; }
+/* The timer gets its own narrow strip instead of stretching the full width. */
+.sort-timer-row { grid-column: 1 / -1; display: flex; justify-content: center; padding: 2px 0 2px; }
+.sort-timer { position: relative; width: min(56%, 260px); height: 15px; border: 1px solid #3a3a3a; border-radius: 8px; background: #1b1b1b; overflow: hidden; }
 .sort-timer i { position: absolute; inset: 0; transform-origin: left center; background: linear-gradient(90deg, #4ec94e, #b5cea8); transition: transform 120ms linear; }
 .sort-timer span { position: absolute; inset: 0; display: grid; place-items: center; color: #10240f; font: 700 10px/1 var(--mono); }
+
+@media (prefers-reduced-motion: reduce) {
+  .sort-flying, .sort-score-effect, .sort-warning { animation-duration: 1ms; }
+}
 
 /* Opponent's board, kept small in the corner so it never competes with play. */
 .sort-opponent { position: absolute; right: 14px; top: 14px; z-index: 4; width: 128px; border: 1px solid #3d3d3d; border-radius: 4px; background: #1c1c1ce8; box-shadow: 0 6px 18px #0008; overflow: hidden; }
