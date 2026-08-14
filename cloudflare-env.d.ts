@@ -95,6 +95,7 @@ declare module "cloudflare:workers" {
     MEMORY_IMAGES?: KVNamespace;
     MEMORY_ROOM?: DurableObjectNamespace;
     REACTION_ROOM?: DurableObjectNamespace;
+    SORT_ROOM?: DurableObjectNamespace;
     STATS?: D1Database;
     UPLOAD_PASSWORD?: string;
     [key: string]: unknown;
