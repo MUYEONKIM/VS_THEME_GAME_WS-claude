@@ -5,6 +5,7 @@ import {
   buildSortRound,
   normalizeSortDifficulty,
   normalizeSortDuration,
+  queueAt,
   SORT_LEAD_IN,
   SORT_PENALTY,
   SORT_SCORE,
@@ -305,7 +306,7 @@ export class SortRoom extends DurableObject {
 
       const direction = payload.direction === "left" ? "left" : "right";
       const index = room.progress[playerIndex];
-      const image = room.round.queue[index];
+      const image = queueAt(room.round, index);
       if (!image) return;
 
       const correct = sideFor(room.round, image) === direction;
