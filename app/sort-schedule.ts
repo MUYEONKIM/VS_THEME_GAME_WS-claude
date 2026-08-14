@@ -88,6 +88,17 @@ export function buildSortRound(
   return { left, right, queue };
 }
 
+/**
+ * Reads the queue as an endless ring. A fast player can otherwise burn through
+ * the whole planned round and be left with nothing to sort, so the sequence
+ * simply wraps — with only two to six characters in play the repeat is
+ * invisible.
+ */
+export function queueAt(round: SortRound, index: number) {
+  if (round.queue.length === 0) return "";
+  return round.queue[index % round.queue.length];
+}
+
 export function sideFor(round: SortRound, image: string): "left" | "right" | null {
   if (round.left.includes(image)) return "left";
   if (round.right.includes(image)) return "right";
