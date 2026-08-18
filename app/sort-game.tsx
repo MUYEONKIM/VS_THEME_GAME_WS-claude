@@ -187,20 +187,16 @@ export function SortGame({
     };
   }, []);
 
-  // Timer alongside rAF: browsers suspend rAF entirely on a hidden tab, which
-  // would leave the clock frozen until the player came back.
+  // Deliberately not a per-frame loop. Nothing here redraws with the clock —
+  // the queue slides off its own CSS transition and the gauge has one too — so
+  // ticking 60 times a second would only flood the main thread and make those
+  // transitions stutter. A timer also survives a hidden tab, which rAF does not.
   useEffect(() => {
     if (!room?.running && !solo) return;
     const advance = () => setNow(Date.now() + clockOffset.current);
-    let frame = window.requestAnimationFrame(function tick() {
-      advance();
-      frame = window.requestAnimationFrame(tick);
-    });
+    advance();
     const timer = window.setInterval(advance, 100);
-    return () => {
-      window.cancelAnimationFrame(frame);
-      window.clearInterval(timer);
-    };
+    return () => window.clearInterval(timer);
   }, [room?.running, solo]);
 
   useEffect(() => {
