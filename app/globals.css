@@ -711,9 +711,25 @@ body.resizing-terminal, body.resizing-terminal * { cursor: ns-resize !important;
   opacity: calc(1 - var(--depth, 0) * 0.1);
   transform: translate(-50%, calc(var(--depth, 0) * var(--lane-step) * -1)) scale(calc(1 - var(--depth, 0) * 0.05));
   z-index: calc(10 - var(--depth, 0));
-  transition: transform 210ms cubic-bezier(.22, .9, .3, 1), opacity 210ms ease-out, border-color 160ms ease-out, box-shadow 160ms ease-out;
+  box-shadow: 0 6px 16px #0009;
+  /* Only transform and opacity are transitioned: both can be handed to the
+     compositor, while a box-shadow or border-colour tween repaints the circle
+     on every frame of the slide. */
+  transition: transform 210ms cubic-bezier(.22, .9, .3, 1), opacity 210ms ease-out;
+  will-change: transform, opacity;
 }
-.sort-lane figure.current { border-color: #f0f0f0; box-shadow: 0 0 0 4px #ffffff26, 0 8px 22px #000b; opacity: 1; transform: translate(-50%, 0) scale(1.16); }
+.sort-lane figure::after {
+  content: "";
+  position: absolute;
+  inset: -3px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 4px #ffffff2e, inset 0 0 0 3px #f0f0f0;
+  opacity: 0;
+  transition: opacity 170ms ease-out;
+  pointer-events: none;
+}
+.sort-lane figure.current::after { opacity: 1; }
+.sort-lane figure.current { opacity: 1; transform: translate(-50%, 0) scale(1.16); }
 .sort-lane img { width: 100%; height: 100%; display: block; object-fit: cover; }
 .sort-lane-empty { margin: 0; color: #6f6f6f; font: 10px/1 var(--mono); }
 
@@ -755,7 +771,7 @@ body.resizing-terminal, body.resizing-terminal * { cursor: ns-resize !important;
 /* The timer gets its own narrow strip instead of stretching the full width. */
 .sort-timer-row { grid-column: 1 / -1; display: flex; justify-content: center; padding: 2px 0 2px; }
 .sort-timer { position: relative; width: min(56%, 260px); height: 20px; border: 1px solid #3a3a3a; border-radius: 10px; background: #1b1b1b; overflow: hidden; }
-.sort-timer i { position: absolute; inset: 0; transform-origin: left center; background: linear-gradient(90deg, #4ec94e, #b5cea8); transition: transform 120ms linear; }
+.sort-timer i { position: absolute; inset: 0; transform-origin: left center; background: linear-gradient(90deg, #4ec94e, #b5cea8); transition: transform 160ms linear; }
 /* Light text with a dark halo so the count stays readable both on the gauge
    and on the empty track it leaves behind. */
 .sort-timer span { position: absolute; inset: 0; display: grid; place-items: center; color: #ffffff; font: 700 11px/1 var(--mono); text-shadow: 0 1px 3px #000c, 0 0 6px #000a; }
